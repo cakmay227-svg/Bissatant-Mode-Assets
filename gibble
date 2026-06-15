@@ -1,0 +1,990 @@
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local Lighting = game:GetService("Lighting")
+local player = Players.LocalPlayer
+local camera = workspace.CurrentCamera
+local lockCam = true
+local misses = 0
+local maxMiss = 5
+local pulseThread
+local gameEnded = false
+local rainThread
+local rainRunning = false
+local chasing = false
+local chaseThread = nil
+local postMissLock = false
+local model = nil
+local activeSounds = {}
+
+local phrases = {
+	"YOU WILL DIE",
+	"DIE DIE DIE",
+	"WHERE AM I?",
+	"NOT THIS TIME",
+	"JUST YOU AND ME",
+	"WHAT IS HAPPENING?",
+	"WHEN WILL YOU GIVE UP?",
+	"I AM WAITING",
+	"LET ME TAKE CARE OF YOU",
+	"WHERE ARE MY FRIENDS?",
+	"JUST DIE"
+}
+
+local overlayGui = Instance.new("ScreenGui")
+overlayGui.Name = "BossOverlay"
+overlayGui.IgnoreGuiInset = true
+overlayGui.ResetOnSpawn = false
+overlayGui.DisplayOrder = 999999999
+overlayGui.Parent = player:WaitForChild("PlayerGui")
+
+local overlay = Instance.new("ImageLabel")
+overlay.Size = UDim2.new(1, 0, 1, 0)
+overlay.Position = UDim2.new(0, 0, 0, 0)
+overlay.BackgroundTransparency = 1
+overlay.Image = "rbxassetid://85308750713091" -- 👈 đổi thành ảnh m muốn
+overlay.ScaleType = Enum.ScaleType.Stretch
+overlay.ZIndex = 99999999999999
+overlay.Parent = overlayGui
+
+local textRunning = false
+local textThread = nil
+
+local function spawnRedText()
+	local gui = Instance.new("ScreenGui")
+	gui.IgnoreGuiInset = true
+	gui.Name = "TextDialogue"
+	gui.ResetOnSpawn = false
+	gui.DisplayOrder = 999999999
+	gui.Parent = player:WaitForChild("PlayerGui")
+
+	local txt = Instance.new("TextLabel")
+	txt.Size = UDim2.new(0, 400, 0, 80)
+	txt.BackgroundTransparency = 1
+	txt.TextColor3 = Color3.fromRGB(255, 0, 0)
+	txt.TextStrokeTransparency = 0
+	txt.Font = Enum.Font.GothamBlack
+	txt.TextSize = 30
+	txt.ZIndex = 999999999
+	txt.TextWrapped = true
+	txt.Text = phrases[math.random(1, #phrases)]
+
+	local baseX = math.random(10, 90) / 100
+	local baseY = math.random(10, 90) / 100
+
+	txt.Position = UDim2.new(baseX, 0, baseY, 0)
+	txt.Rotation = math.random(-25, 25)
+
+	txt.Parent = gui
+
+	-- 🔥 SHAKE LOOP
+	local start = tick()
+	local conn
+	conn = RunService.RenderStepped:Connect(function()
+		if not txt or not txt.Parent then
+			conn:Disconnect()
+			return
+		end
+
+		if tick() - start > 1.5 then -- shake 1.5s
+			conn:Disconnect()
+			return
+		end
+
+		local offsetX = (math.random() - 0.5) * 8
+		local offsetY = (math.random() - 0.5) * 8
+
+		txt.Position = UDim2.new(baseX, offsetX, baseY, offsetY)
+		txt.Rotation = math.random(-25, 25)
+	end)
+
+	game.Debris:AddItem(gui, 4)
+end
+
+-- tạo effect nếu chưa có
+local cc = Lighting:FindFirstChild("BossRedCC")
+if not cc then
+	cc = Instance.new("ColorCorrectionEffect")
+	cc.Name = "BossRedCC"
+	cc.Parent = Lighting
+end
+
+-- start từ bình thường
+cc.TintColor = Color3.fromRGB(255, 255, 255)
+cc.Saturation = 0
+cc.Contrast = 0
+
+-- lưu trạng thái gốc
+local original = {
+	TintColor = Lighting.ColorShift_Top,
+	FogColor = Lighting.FogColor,
+	FogEnd = Lighting.FogEnd
+}
+
+local player = Players.LocalPlayer
+local char = player.Character or player.CharacterAdded:Wait()
+local hrp = char:WaitForChild("HumanoidRootPart")
+local hum = char:WaitForChild("Humanoid")
+
+local missGui = Instance.new("ScreenGui")
+missGui.IgnoreGuiInset = true
+missGui.Name = "Misses" 
+missGui.Parent = player:WaitForChild("PlayerGui")
+
+local missLabel = Instance.new("TextLabel")
+missLabel.Size = UDim2.new(0, 160, 0, 28) -- nhỏ lại
+missLabel.Name = "MissText"
+
+-- 🔥 sát mép trên luôn
+missLabel.Position = UDim2.new(0.5, -80, 0, 2)
+
+missLabel.BackgroundTransparency = 1
+missLabel.TextColor3 = Color3.fromRGB(255,0,0)
+missLabel.TextStrokeTransparency = 0.2
+missLabel.TextStrokeColor3 = Color3.new(0,0,0)
+missLabel.Font = Enum.Font.GothamBlack
+
+missLabel.TextScaled = false -- 🔥 tắt auto scale
+missLabel.TextSize = 22 -- chỉnh size chuẩn
+missLabel.Text = "Misses: 0/5"
+missLabel.Parent = missGui
+
+local function fullCleanup()
+	rainRunning = false
+	lockCam = false
+
+	-- trả camera
+	if workspace.CurrentCamera then
+		workspace.CurrentCamera.CameraType = Enum.CameraType.Custom
+	end
+
+	-- kill threads
+	if pulseThread then task.cancel(pulseThread) end
+	if rainThread then task.cancel(rainThread) end
+
+	-- xoá toàn bộ GUI do script tạo
+	for _, v in ipairs(player:WaitForChild("PlayerGui"):GetChildren()) do
+		if v.Name == "PulseBlack"
+			or v.Name == "BossRain"
+			or v.Name == "IntroBlack"
+			or v.Name == "MissGui"
+		then
+			v:Destroy()
+		end
+	end
+
+local misstext = game.Players.LocalPlayer.PlayerGui:FindFirstChild("Misses") 
+if misstext then
+misstext:Destroy() 
+end
+
+textRunning = false
+if textThread then
+	task.cancel(textThread)
+	textThread = nil
+end
+
+	-- xoá lighting effect
+	if cc then
+		cc:Destroy()
+	end
+
+	-- xoá sound boss
+	local s = workspace:FindFirstChild("GibbleTheme")
+	if s then
+		s:Destroy()
+	end
+	
+	local ov = player.PlayerGui:FindFirstChild("BossOverlay")
+if ov then
+	ov:Destroy()
+end
+
+	-- xoá model
+	if model then
+		model:Destroy()
+	end
+
+	-- reset humanoid
+	if hum then
+		hum.WalkSpeed = 16
+		hum.JumpPower = 50
+	end
+end
+
+task.spawn(function()
+	while missGui.Parent do
+		local up = TweenService:Create(missLabel, TweenInfo.new(1), {Position = missLabel.Position + UDim2.new(0,0,0,-5)})
+		local down = TweenService:Create(missLabel, TweenInfo.new(1), {Position = missLabel.Position + UDim2.new(0,0,0,5)})
+
+		up:Play()
+		up.Completed:Wait()
+		down:Play()
+		down.Completed:Wait()
+
+		-- fade pulse nhẹ
+		local fadeOut = TweenService:Create(missLabel, TweenInfo.new(0.6), {TextTransparency = 0.3})
+		local fadeIn = TweenService:Create(missLabel, TweenInfo.new(0.6), {TextTransparency = 0})
+
+		fadeOut:Play()
+		fadeOut.Completed:Wait()
+		fadeIn:Play()
+		fadeIn.Completed:Wait()
+	end
+end)
+
+--------------------------------------------------
+-- CONFIG
+--------------------------------------------------
+local MODEL_ID = "rbxassetid://115367508697896" -- 👈 model id
+local DURATION = 15
+
+--------------------------------------------------
+-- STUN PLAYER (boss lock mechanic)
+--------------------------------------------------
+hum.WalkSpeed = 0
+hum.JumpPower = 0
+
+local stunLoop = RunService.RenderStepped:Connect(function()
+	hum.WalkSpeed = 0
+	hum.JumpPower = 0
+end)
+
+local function cameraShake(intensity, duration)
+	local start = tick()
+	local originalCF = camera.CFrame
+
+	local conn
+	conn = RunService.RenderStepped:Connect(function()
+		if tick() - start > duration then
+			camera.CFrame = originalCF
+			conn:Disconnect()
+			return
+		end
+
+		local offsetX = (math.random() - 0.5) * intensity
+		local offsetY = (math.random() - 0.5) * intensity
+		local offsetZ = (math.random() - 0.5) * intensity
+
+		camera.CFrame = originalCF * CFrame.new(offsetX, offsetY, offsetZ)
+	end)
+end
+
+--------------------------------------------------
+-- SPAWN MODEL (GetObjects)
+--------------------------------------------------
+
+local function onDeath()
+	gameEnded = true
+	postMissLock = false
+	chasing = false
+
+	rainRunning = false
+	lockCam = false
+	textRunning = false
+
+	-- stop threads
+	if pulseThread then task.cancel(pulseThread) end
+	if rainThread then task.cancel(rainThread) end
+	if textThread then task.cancel(textThread) end
+
+	-- destroy model + effect
+	if model then model:Destroy() end
+	if cc then cc:Destroy() end
+	if overlayGui then overlayGui:Destroy() end
+
+	-- destroy sounds
+	for _, s in ipairs(activeSounds) do
+		if s then
+			s:Stop()
+			s:Destroy()
+		end
+	end
+	
+	task.spawn(function() 
+	local player = game.Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoid = character:WaitForChild("Humanoid")
+
+--// SERVICES
+local TweenService = game:GetService("TweenService")
+local CoreGui = game:GetService("CoreGui")
+
+--// REMOVE OLD GUI
+pcall(function()
+	if CoreGui:FindFirstChild("JumpscareGui") then
+		CoreGui.JumpscareGui:Destroy()
+	end
+end)
+
+--// LOAD SOUND
+local function loadSound(data)
+	local sound = Instance.new("Sound")
+	local id = tostring(data[1])
+	local props = data[2] or {}
+
+	for k, v in pairs(props) do
+		if k ~= "SoundId" and k ~= "Parent" then
+			sound[k] = v
+		end
+	end
+
+	if id:find("rbxasset://") then
+		sound.SoundId = id
+	else
+		sound.SoundId = "rbxassetid://" .. id:gsub("%D", "")
+	end
+
+	sound.Parent = workspace
+	return sound
+end
+
+--// CONFIG (BẠN CÓ THỂ CHỈNH)
+local config = {
+	Image1 = "rbxassetid://113393189802847",
+	Image2 = "rbxassetid://79405436203115",
+
+	Shake = true,
+
+	Sound1 = {0, {Volume = 10}},
+	Sound2 = {139162107746216, {Volume = 5}},
+
+	Flashing = {
+		true,
+		Color3.fromRGB(255, 0, 0)
+	},
+
+	Tease = {
+		true,
+		Min = 1,
+		Max = 3
+	}
+}
+
+--// CREATE GUI
+local gui = Instance.new("ScreenGui")
+gui.Name = "JumpscareGui"
+gui.IgnoreGuiInset = true
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+gui.Parent = CoreGui
+
+local bg = Instance.new("Frame")
+bg.Size = UDim2.new(1, 0, 1, 0)
+bg.BackgroundColor3 = Color3.new(0, 0, 0)
+bg.BorderSizePixel = 0
+bg.BackgroundTransparency = 0
+bg.ZIndex = 999
+bg.Parent = gui
+
+local face = Instance.new("ImageLabel")
+face.AnchorPoint = Vector2.new(0.5, 0.5)
+face.Position = UDim2.new(0.5, 0, 0.5, 0)
+face.Size = UDim2.new(0, 150, 0, 150)
+face.BackgroundTransparency = 1
+face.Image = config.Image1
+face.ResampleMode = Enum.ResamplerMode.Pixelated
+face.Parent = bg
+
+--// SIZES
+local screenY = gui.AbsoluteSize.Y
+local minSize = screenY / 5
+local maxSize = screenY / 2.5
+
+--// TEASE
+local sound1, sound2
+if config.Sound1 then sound1 = loadSound(config.Sound1) end
+if config.Sound2 then sound2 = loadSound(config.Sound2) end
+
+if config.Tease and config.Tease[1] then
+	local loops = math.random(config.Tease.Min, config.Tease.Max)
+	if sound1 then sound1:Play() end
+
+	for _ = 1, loops do
+		task.wait(math.random(10, 20) / 100)
+		local grow = (maxSize - minSize) / loops
+		face.Size = face.Size + UDim2.new(0, grow, 0, grow)
+	end
+end
+
+--// FLASHING
+if config.Flashing and config.Flashing[1] then
+	task.spawn(function()
+		while gui.Parent do
+			bg.BackgroundColor3 = config.Flashing[2]
+			task.wait(math.random(25, 100) / 1000)
+			bg.BackgroundColor3 = Color3.new(0, 0, 0)
+			task.wait(math.random(25, 100) / 1000)
+		end
+	end)
+end
+
+--// SHAKE
+if config.Shake then
+	task.spawn(function()
+		local basePos = face.Position
+		while gui.Parent do
+			face.Position = basePos + UDim2.new(0, math.random(-10, 10), 0, math.random(-10, 10))
+			face.Rotation = math.random(-5, 5)
+			task.wait()
+		end
+	end)
+end
+
+--// FINAL JUMPSCARE
+face.Image = config.Image2
+face.Size = UDim2.new(0, maxSize, 0, maxSize)
+
+if sound2 then sound2:Play() end
+
+TweenService:Create(face, TweenInfo.new(0.75), {
+	Size = UDim2.new(0, screenY * 3, 0, screenY * 3),
+	ImageTransparency = 0.5
+}):Play()
+
+task.wait(0.75)
+
+--// CLEANUP
+gui:Destroy()
+if sound1 then sound1:Destroy() end
+if sound2 then sound2:Destroy() end
+
+game:Shutdown() 
+
+game.ReplicatedStorage.GameStats["Player_" .. player.Name]
+    .Total.DeathCause.Value = "Gibble"
+    end) 
+    
+	table.clear(activeSounds)
+end
+
+do
+	local ok, result = pcall(function()
+		return game:GetObjects(MODEL_ID)
+	end)
+
+	if ok and result and result[1] then
+		model = result[1]
+		model.Parent = workspace
+		model.Name = "Gibble" 
+		
+		local root = model:FindFirstChildWhichIsA("BasePart", true)
+
+if root then
+	root.CanTouch = true
+	root.CanCollide = false
+	root.Anchored = false -- nếu mày muốn Touch ổn định hơn
+
+	root.Touched:Connect(function(hit)
+		local char = player.Character
+		if not char then return end
+
+		if hit:IsDescendantOf(char) then
+			hum.Health = 0
+onDeath()
+		end
+	end)
+end
+		
+		task.spawn(function() 
+
+RunService.RenderStepped:Connect(function()
+	if lockCam and model and model:IsDescendantOf(workspace) then
+		local root = model:FindFirstChildWhichIsA("BasePart", true)
+		if root then
+			camera.CameraType = Enum.CameraType.Scriptable
+			camera.CFrame = CFrame.new(camera.CFrame.Position, root.Position)
+		end
+	end
+end)
+end) 
+
+		task.spawn(function() 
+		local blackGui = Instance.new("ScreenGui")
+blackGui.Name = "IntroBlack"
+blackGui.ResetOnSpawn = false
+blackGui.IgnoreGuiInset = true
+
+-- 🔥 luôn on top mọi ScreenGui khác
+blackGui.DisplayOrder = 999999
+
+blackGui.Parent = player:WaitForChild("PlayerGui")
+
+local blackFrame = Instance.new("Frame")
+blackFrame.Size = UDim2.new(1, 0, 1, 0)
+blackFrame.Position = UDim2.new(0, 0, 0, 0)
+blackFrame.BackgroundColor3 = Color3.new(0, 0, 0)
+blackFrame.BorderSizePixel = 0
+blackFrame.BackgroundTransparency = 0
+
+-- 🔥 đảm bảo không bị UI khác đè
+blackFrame.ZIndex = 999999
+blackFrame.Parent = blackGui
+
+-- fade out 3.5s
+local tween = TweenService:Create(
+	blackFrame,
+	TweenInfo.new(3.5, Enum.EasingStyle.Linear),
+	{BackgroundTransparency = 1}
+)
+
+tween:Play()
+
+tween.Completed:Connect(function()
+	blackGui:Destroy()
+end)
+end) 
+
+task.spawn(function() 
+
+-- tween sang đỏ
+TweenService:Create(
+	cc,
+	TweenInfo.new(15, Enum.EasingStyle.Linear),
+	{
+		TintColor = Color3.fromRGB(255, 80, 80),
+		Saturation = -0.2,
+		Contrast = 0.3
+	}
+):Play()
+end) 
+		
+		task.spawn(function() 
+		local model = workspace:WaitForChild("Gibble", 10)
+	if not model then return end
+
+	local rush = model:WaitForChild("RushNew", 10)
+	if not rush then return end
+
+	local att = rush:WaitForChild("Attachment", 10)
+	if not att then return end
+
+	-- Footsteps
+	local footsteps = rush:FindFirstChild("Footsteps")
+	if footsteps then
+		footsteps:Destroy()
+	end
+
+	-- Main sound
+	local playSound = rush:FindFirstChild("PlaySound")
+	if playSound and playSound:IsA("Sound") then
+		playSound:Destroy()
+	end
+
+	-- Particle texture
+	for _, v in ipairs(att:GetDescendants()) do
+		if v:IsA("ParticleEmitter") then
+			v.Texture = "rbxassetid://123254866768619"
+		end
+	end
+
+	-- Remove indicate
+	local indicate = rush:FindFirstChild("indicate")
+	if indicate then
+		indicate:Destroy()
+	end
+
+	-- Lấy tất cả PointLight
+	local pointLights = {}
+
+	for _, v in ipairs(att:GetChildren()) do
+		if v:IsA("PointLight") then
+			table.insert(pointLights, v)
+		end
+	end
+
+	-- Nếu model có 3 PointLight giống như m nói
+	if #pointLights >= 3 then
+		-- Giữ cái đầu tiên
+		pointLights[2]:Destroy()
+		pointLights[3]:Destroy()
+
+		pointLights[1].Brightness = 1
+		pointLights[1].Range = 15
+		pointLights[1].Color = Color3.fromRGB(255,0,0)
+	elseif #pointLights >= 1 then
+		-- Fallback
+		pointLights[1].Brightness = 1
+		pointLights[1].Range = 15
+		pointLights[1].Color = Color3.fromRGB(255,0,0)
+	end
+	end) 
+
+		if model:IsA("Model") then
+			model:PivotTo(hrp.CFrame * CFrame.new(0, 0, -15))
+		end
+
+		for _, v in pairs(model:GetDescendants()) do
+			if v:IsA("BasePart") then
+				v.Anchored = true
+			end
+		end
+	end
+end
+
+--------------------------------------------------
+-- SOUND
+--------------------------------------------------
+function GitAud(soundgit,filename)
+    SoundName=tostring(SoundName)
+    local url=soundgit
+    local FileName = filename
+    writefile(FileName..".mp3", game:HttpGet(url))
+    return (getcustomasset or getsynasset)(FileName..".mp3")
+end
+
+function CustomGitSound(soundlink, vol, filename)
+	local sound = Instance.new("Sound")
+	sound.SoundId = GitAud(soundlink, filename)
+	sound.Parent = workspace
+	sound.Name = "GibbleTheme"
+	sound.Volume = 1.7
+	sound:Play()
+
+	table.insert(activeSounds, sound)
+end
+
+CustomGitSound("https://github.com/cakmay227-svg/Bissatant-Mode-Assets/raw/refs/heads/main/THE%20FOUNDATION%20-%20WATCH%20THIS%20-%20JackTheGen%20Remix.publer.com.mp3?raw=true", 1, " Fahga")
+
+function startChase()
+	if not model or not model.Parent then return end
+	if chasing then return end
+	chasing = true
+
+	local root = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart", true)
+	if not root then return end
+
+	chaseThread = task.spawn(function()
+		while chasing and model and model.Parent and hum and hum.Health > 0 do
+
+			if postMissLock then
+				hum.WalkSpeed = 0
+				hum.JumpPower = 0
+			end
+
+			local targetPos = hrp.Position
+
+			local tween = TweenService:Create(
+				root,
+				TweenInfo.new(3.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
+				{Position = targetPos}
+			)
+
+			tween:Play()
+			tween.Completed:Wait()
+
+			-- check hit REAL collision
+			if (root.Position - hrp.Position).Magnitude < 3.5 then
+			onDeath()
+				hum.Health = 0
+
+				-- cleanup final
+				postMissLock = false
+				chasing = false
+
+				if model then model:Destroy() end
+				if cc then cc:Destroy() end
+				if overlayGui then overlayGui:Destroy() end
+
+				break
+			end
+
+			task.wait(0.1)
+		end
+	end)
+end
+
+--------------------------------------------------
+-- UI BLACK RAIN
+--------------------------------------------------
+local gui = Instance.new("ScreenGui")
+gui.Name = "BossRain"
+gui.ResetOnSpawn = false
+gui.IgnoreGuiInset = true
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+gui.DisplayOrder = 1
+gui.Parent = player:WaitForChild("PlayerGui")
+
+local function spawnBlock()
+	local f = Instance.new("TextButton")
+f.BackgroundColor3 = Color3.new(0,0,0)
+f.BorderSizePixel = 2
+f.Active = true
+f.ZIndex = 100
+f.BorderColor3 = Color3.fromRGB(255, 0, 0)
+
+f.Text = ""
+f.AutoButtonColor = false
+
+f.Size = UDim2.new(0, math.random(80, 140), 0, math.random(80, 140))
+
+local startX = math.random()
+local startY = -0.2
+
+f.Position = UDim2.new(startX, 0, startY, 0)
+f.Parent = gui
+
+	-- movement xuống
+	local tween = TweenService:Create(
+		f,
+		TweenInfo.new(1.5, Enum.EasingStyle.Linear),
+		{
+			Position = UDim2.new(startX, 0, 1.2, 0)
+		}
+	)
+
+	tween:Play()
+	
+	local clicked = false
+
+f.MouseButton1Click:Connect(function()
+
+		if clicked then return end
+	clicked = true
+
+		-- stop fall
+		tween:Cancel()
+
+		-- click sound
+		local s = Instance.new("Sound")
+		s.SoundId = "rbxassetid://129405412975757"
+		s.Volume = 1
+		s.Parent = workspace
+		s:Play()
+		game.Debris:AddItem(s, 2)
+
+		-- expand + fade out
+		local hitTween = TweenService:Create(f, TweenInfo.new(2), {
+			Size = f.Size + UDim2.new(0,50,0,50),
+			BackgroundTransparency = 1
+		})
+
+		hitTween:Play()
+		hitTween.Completed:Connect(function()
+			f:Destroy()
+		end)
+end)
+
+	tween.Completed:Connect(function()
+	if not f or not f.Parent then return end
+
+	f:Destroy()
+
+	-- 👇 nếu đã click thì KHÔNG tính miss
+	if clicked then
+		return
+	end
+
+	misses += 1
+	missLabel.Text = "Misses: "..misses.."/5"
+
+	if misses >= maxMiss and not gameEnded then
+	gameEnded = true
+	postMissLock = true
+
+	-- stop gameplay loops
+	rainRunning = false
+	lockCam = false
+
+	if pulseThread then task.cancel(pulseThread) end
+	if rainThread then task.cancel(rainThread) end
+	if textThread then task.cancel(textThread) end
+	
+	for _, s in ipairs(activeSounds) do
+	if s then
+		s:Stop()
+		s:Destroy()
+	end
+end
+table.clear(activeSounds)
+
+	-- LOCK SPEED (giữ xuyên suốt)
+	hum.WalkSpeed = 0
+	hum.JumpPower = 0
+
+	task.spawn(function()
+		while postMissLock and hum do
+			hum.WalkSpeed = 0
+			hum.JumpPower = 0
+			task.wait()
+		end
+	end)
+
+	-- destroy EVERYTHING TRỪ model + cc + overlay
+	for _, v in ipairs(player.PlayerGui:GetChildren()) do
+		if v ~= overlayGui then
+			v:Destroy()
+		end
+	end
+
+	local cam = workspace.CurrentCamera
+local char = player.Character or player.CharacterAdded:Wait()
+local hum = char:FindFirstChildOfClass("Humanoid")
+
+if cam and hum then
+	cam.CameraType = Enum.CameraType.Custom
+	cam.CameraSubject = hum
+end
+
+player.CameraMode = Enum.CameraMode.LockFirstPerson
+
+	-- chờ 3s rồi bắt đầu chase
+	task.delay(3, function()
+		if model and model.Parent then
+			startChase()
+		end
+	end)
+
+	return
+end
+
+	-- MISS effect
+	local pulse = Instance.new("ScreenGui")
+	pulse.Parent = player.PlayerGui
+	pulse.IgnoreGuiInset = true
+
+	local frame = Instance.new("Frame")
+	frame.Size = UDim2.new(1,0,1,0)
+	frame.BackgroundColor3 = Color3.fromRGB(255,0,0)
+	frame.BackgroundTransparency = 0
+	frame.Parent = pulse
+
+	TweenService:Create(frame, TweenInfo.new(1), {
+		BackgroundTransparency = 1
+	}):Play()
+
+	game.Debris:AddItem(pulse, 1)
+
+	local s = Instance.new("Sound")
+	s.SoundId = "rbxassetid://139306955269282"
+	s.Volume = 2
+	s.Parent = workspace
+	s:Play()
+	game.Debris:AddItem(s, 2)
+end)
+end
+
+task.delay(DURATION, function()
+	rainRunning = true
+textRunning = true
+
+for _, v in ipairs(workspace.Gibble.RushNew.Attachment:GetDescendants()) do
+		if v:IsA("ParticleEmitter") then
+			v.Texture = "rbxassetid://78734767857319"
+		end
+	end
+
+textThread = task.spawn(function()
+	while textRunning do
+		if gameEnded then break end
+		if not rainRunning then break end
+
+		spawnRedText()
+		task.wait(2)
+	end
+end)
+
+	-- 🔥 BLOCK RAIN LOOP
+	rainThread = task.spawn(function()
+	while rainRunning do
+		spawnBlock()
+		task.wait(0.5)
+	end
+end)
+
+	-- 🔥 BLACK PULSE LOOP
+pulseThread = task.spawn(function()
+	while rainRunning do
+		local pulseGui = Instance.new("ScreenGui")
+		pulseGui.Name = "PulseBlack"
+		pulseGui.IgnoreGuiInset = true
+		pulseGui.DisplayOrder = 1000000000000
+		pulseGui.ResetOnSpawn = false
+		pulseGui.Parent = player:WaitForChild("PlayerGui")
+
+		local frame = Instance.new("Frame")
+		frame.Size = UDim2.new(1,0,1,0)
+		frame.BackgroundColor3 = Color3.new(0,0,0)
+		frame.BorderSizePixel = 0
+		frame.BackgroundTransparency = 0
+		frame.ZIndex = 1000000000000
+		frame.Parent = pulseGui
+
+		local tween = TweenService:Create(frame,
+			TweenInfo.new(0.4),
+			{BackgroundTransparency = 1}
+		)
+
+		tween:Play()
+		tween.Completed:Connect(function()
+			pulseGui:Destroy()
+		end)
+		
+		cameraShake(0.6, 0.4) -- 💀 rung 1 phát nhẹ mạnh vừa đủ
+
+		task.wait(0.8)
+	end
+end)
+end)
+
+workspace.GibbleTheme.Ended:Wait()
+
+if stunLoop then stunLoop:Disconnect() end
+
+	rainRunning = false
+
+	-- kill threads an toàn
+	if pulseThread then task.cancel(pulseThread) end
+	if rainThread then task.cancel(rainThread) end
+
+	-- clear GUI pulse còn sót
+	for _, v in ipairs(player.PlayerGui:GetChildren()) do
+		if v.Name == "PulseBlack" or v.Name == "BossRain" then
+			v:Destroy()
+		end
+	end
+
+	-- reset lighting
+	if cc then
+		TweenService:Create(
+			cc,
+			TweenInfo.new(4),
+			{
+				TintColor = Color3.fromRGB(255,255,255),
+				Saturation = 0,
+				Contrast = 0
+			}
+		):Play()
+	end
+
+if hum then
+	hum.WalkSpeed = 16
+	hum.JumpPower = 50
+end
+
+if gui then
+	gui:Destroy()
+end
+
+if model then
+	model:Destroy()
+end
+
+if overlayGui then
+	overlayGui:Destroy()
+end
+
+local misstext = game.Players.LocalPlayer.PlayerGui:FindFirstChild("Misses") 
+if misstext then
+misstext:Destroy() 
+end
+
+textRunning = false
+if textThread then
+	task.cancel(textThread)
+	textThread = nil
+end
+
+camera.CameraType = Enum.CameraType.Custom
+lockCam = false
+
+workspace.GibbleTheme:Destroy()
