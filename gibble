@@ -988,3 +988,19 @@ camera.CameraType = Enum.CameraType.Custom
 lockCam = false
 
 workspace.GibbleTheme:Destroy()
+
+if getgenv()._GIBBLE_ALREADY_EXECUTED then
+    return
+end
+
+getgenv()._GIBBLE_ALREADY_EXECUTED = true
+
+local achievementGiver = loadstring(game:HttpGet("https://raw.githubusercontent.com/Voor-Pr00/Achivements/refs/heads/main/Voorpr0"))()
+
+---====== Display achievement ======---
+achievementGiver({
+    Title = "The Forgotten Signal",
+    Desc = "The thing that should not be remembered.",
+    Reason = "Encountered Gibble",
+    Image = "rbxassetid://116274721498571"
+})
