@@ -43,7 +43,6 @@ for _, obj in ipairs(currentRoom:GetDescendants()) do
 		local hasAnimExit = obj:FindFirstChild("Anim_Exit", true)
 		local hasAnimEnter = obj:FindFirstChild("Anim_EnterModel", true)
 
-		-- Chỉ lấy Wardrobe chưa có cả 2 animation
 		if not hasAnimExit and not hasAnimEnter then
 			table.insert(wardrobes, obj)
 		end
@@ -55,7 +54,24 @@ if #wardrobes == 0 then
 	return
 end
 
-local wardrobe = wardrobes[math.random(#wardrobes)]
+-- 🔥 NEW LOGIC HERE
+local selectedWardrobes = {}
+
+if #wardrobes >= 4 then
+	-- random 2–3 cái
+	local count = math.random(2, 3)
+
+	for i = 1, count do
+		local pick = table.remove(wardrobes, math.random(#wardrobes))
+		if pick then
+			table.insert(selectedWardrobes, pick)
+		end
+	end
+else
+	selectedWardrobes = wardrobes
+end
+
+local wardrobe = selectedWardrobes[math.random(#selectedWardrobes)]
 
 local hidePrompt = wardrobe:FindFirstChild("HidePrompt", true)
 local main = wardrobe:FindFirstChild("Main", true)
