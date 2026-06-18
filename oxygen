@@ -1,0 +1,296 @@
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local player = Players.LocalPlayer
+
+local ASSET_ID = 14313023585 -- THAY ID
+
+local CurrentRooms = workspace:WaitForChild("CurrentRooms")
+local GameData = game.ReplicatedStorage:WaitForChild("GameData")
+local LatestRoom = GameData:WaitForChild("LatestRoom")
+
+local HauntEvent = ReplicatedStorage:WaitForChild("HauntMeterEvent")
+
+--------------------------------------------------
+-- ROOM
+--------------------------------------------------
+
+local room = CurrentRooms:FindFirstChild(tostring(LatestRoom.Value))
+
+if not room then
+	warn("Room not found:", LatestRoom.Value)
+	return
+end
+
+--------------------------------------------------
+-- LOAD MODEL
+--------------------------------------------------
+
+local model = game:GetObjects("rbxassetid://" .. ASSET_ID)[1]
+
+if not model then
+	warn("Failed to load model")
+	return
+end
+
+model.Parent = workspace
+model:ScaleTo(2)
+
+if not model.PrimaryPart then
+	model.PrimaryPart = model:FindFirstChildWhichIsA("BasePart", true)
+end
+
+if not model.PrimaryPart then
+	warn("Model has no PrimaryPart")
+	model:Destroy()
+	return
+end
+
+--------------------------------------------------
+-- FIND FLOOR
+--------------------------------------------------
+
+local floors = {}
+
+for _, obj in ipairs(room:GetDescendants()) do
+	if obj:IsA("BasePart") and obj.Name == "Floor" then
+		table.insert(floors, obj)
+	end
+end
+
+if #floors == 0 then
+	warn("No Floor found")
+	model:Destroy()
+	return
+end
+
+--------------------------------------------------
+-- SAFE POSITION
+--------------------------------------------------
+
+local _, modelSize = model:GetBoundingBox()
+
+local function getSpawnPosition()
+
+	for _ = 1, 100 do
+
+		local floor = floors[math.random(1, #floors)]
+
+		local floorSize = floor.Size
+		local floorPos = floor.Position
+
+		local x = floorPos.X + (math.random() - 0.5) * (floorSize.X * 0.8)
+		local z = floorPos.Z + (math.random() - 0.5) * (floorSize.Z * 0.8)
+
+		local y =
+			floor.Position.Y +
+			(floor.Size.Y / 2) +
+			(modelSize.Y / 2) +
+			1.5
+
+		local candidate = Vector3.new(x, y, z)
+
+		local overlap = workspace:GetPartBoundsInBox(
+			CFrame.new(candidate),
+			modelSize
+		)
+
+		local blocked = false
+
+		for _, part in ipairs(overlap) do
+
+			if part:IsDescendantOf(model) then
+				continue
+			end
+
+			if part.Name ~= "Floor" then
+				blocked = true
+				break
+			end
+		end
+
+		if not blocked then
+			return candidate
+		end
+	end
+
+	return nil
+end
+
+local spawnPos = getSpawnPosition()
+
+if not spawnPos then
+	warn("Could not find safe spawn position")
+	model:Destroy()
+	return
+end
+
+local originalCF = model:GetPivot()
+
+model:PivotTo(
+	CFrame.fromMatrix(
+		spawnPos,
+		originalCF.XVector,
+		originalCF.YVector,
+		originalCF.ZVector
+	)
+)
+
+--------------------------------------------------
+-- HIGHLIGHT
+--------------------------------------------------
+
+local highlight = Instance.new("Highlight")
+highlight.FillColor = Color3.new(1,1,1)
+highlight.FillTransparency = 0.7
+highlight.OutlineColor = Color3.new(1,1,1)
+highlight.OutlineTransparency = 0
+highlight.Parent = model
+
+--------------------------------------------------
+-- FLOAT ANIMATION
+--------------------------------------------------
+
+local startPivot = model:GetPivot()
+
+task.spawn(function()
+
+	while model.Parent do
+
+		local offset =
+			math.sin(tick() * 2) * 0.6
+
+		model:PivotTo(
+			startPivot + Vector3.new(0, offset, 0)
+		)
+
+		task.wait()
+	end
+
+end)
+
+--------------------------------------------------
+-- PROMPT
+--------------------------------------------------
+
+local prompt = Instance.new("ProximityPrompt")
+prompt.Name = "HauntPrompt"
+prompt.ActionText = "Cleanse"
+prompt.ObjectText = "Strange Presence"
+prompt.Style = Enum.ProximityPromptStyle.Custom
+prompt.HoldDuration = 2
+prompt.RequiresLineOfSight = false
+prompt.MaxActivationDistance = 10
+prompt.Parent = model.PrimaryPart
+
+--------------------------------------------------
+-- FADE OUT
+--------------------------------------------------
+
+local triggered = false
+
+prompt.Triggered:Connect(function(plr)
+
+	if triggered then
+		return
+	end
+	
+	prompt:Destroy() 
+	
+	local oxy = Instance.new("Sound", workspace) 
+	oxy.SoundId = "rbxassetid://115085871255102" 
+	oxy.Volume = 1
+	oxy:Play()
+	
+	oxy.Ended:Connect(function()
+	oxy:Destroy()
+	end) 
+	
+	local smoke = Instance.new("Smoke", model.PrimaryPart)
+	
+	local captions = {
+	"The possession weakens...",
+	"You regain a fragment of yourself.",
+	"The spirits lose their grip.",
+	"Your mind feels clearer.",
+	"The haunting recedes slightly.",
+	"A piece of your soul returns.",
+	"The darkness withdraws.",
+	"You resist the possession.",
+	"The voices grow quieter.",
+	"Your will grows stronger.",
+	"The corruption fades a little.",
+	"You feel less connected to them.",
+	"Their influence diminishes.",
+	"The hotel loses its hold on you.",
+	"A cleansing presence surrounds you.",
+	"The curse weakens.",
+	"You push back against the possession.",
+	"Some of the haunting has been lifted."
+}
+
+local caption = captions[math.random(1, #captions)]
+
+require(
+	game.Players.LocalPlayer.PlayerGui.MainUI.Initiator.Main_Game
+).caption(caption, true)
+
+	if plr ~= player then
+		return
+	end
+
+	triggered = true
+
+	HauntEvent:Fire(-40)
+
+	local tweens = {}
+
+	for _, obj in ipairs(model:GetDescendants()) do
+
+		if obj:IsA("BasePart") then
+
+			local tween = TweenService:Create(
+				obj,
+				TweenInfo.new(
+					2,
+					Enum.EasingStyle.Quad,
+					Enum.EasingDirection.Out
+				),
+				{
+					Transparency = 1
+				}
+			)
+
+			table.insert(tweens, tween)
+			tween:Play()
+
+		elseif obj:IsA("Decal") or obj:IsA("Texture") then
+
+			local tween = TweenService:Create(
+				obj,
+				TweenInfo.new(2),
+				{
+					Transparency = 1
+				}
+			)
+
+			table.insert(tweens, tween)
+			tween:Play()
+		end
+	end
+
+	TweenService:Create(
+		highlight,
+		TweenInfo.new(2),
+		{
+			FillTransparency = 1,
+			OutlineTransparency = 1
+		}
+	):Play()
+
+	task.wait(2)
+
+	model:Destroy()
+
+end)
