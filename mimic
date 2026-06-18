@@ -1,0 +1,423 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+local TweenService = game:GetService("TweenService")
+local Lighting = game:GetService("Lighting")
+
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local rootPart = character:WaitForChild("HumanoidRootPart")
+local humanoid = character:WaitForChild("Humanoid")
+local camera = Workspace.CurrentCamera
+local HauntEvent = ReplicatedStorage:WaitForChild("HauntMeterEvent")
+
+local TOTAL_MODELS = 10         
+local MAX_RADIUS = 15           
+local ROTATION_SPEED = 2
+local SPAWN_HOLD_TIME = 0.7     
+local GAME_DURATION = 10
+local LOOK_REQUIRED_TIME = 2
+
+local CLONE_ID = "rbxassetid://135048322995167"
+local REAL_ID = "rbxassetid://108976734309093"
+
+local mimicFolder = Instance.new("Folder")
+mimicFolder.Name = "MimicModelsGame"
+mimicFolder.Parent = Workspace
+
+local spawnAppearSound = Instance.new("Sound")
+spawnAppearSound.SoundId = "rbxassetid://135356038255936"
+spawnAppearSound.Looped = false
+spawnAppearSound.Volume = 0.2
+spawnAppearSound.Parent = mimicFolder
+spawnAppearSound:Play()
+
+local entitySound = Instance.new("Sound")
+entitySound.SoundId = "rbxassetid://140028279221307"
+entitySound.Looped = true
+entitySound.PlaybackSpeed = 0.3
+entitySound.Volume = 3
+entitySound.Parent = mimicFolder
+entitySound:Play()
+
+local modelList = {}
+local laserParts = {} 
+local realModelIndex = math.random(1, TOTAL_MODELS)
+local realModelInstance = nil
+local originalSizes = {}
+
+local function playSmoothFlash()
+    local cc = Lighting:FindFirstChild("MainColorCorrection") or Lighting:FindFirstChildWhichIsA("ColorCorrectionEffect")
+    if not cc then 
+        return 
+    end
+    
+    local oldColor = cc.TintColor
+    local oldContrast = cc.Contrast
+    
+    local flashInfo = TweenInfo.new(0.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
+    
+    local tweenIn = TweenService:Create(cc, flashInfo, {
+        TintColor = Color3.fromRGB(170, 0, 255),
+        Contrast = 5
+    })
+    
+    local tweenOut = TweenService:Create(cc, flashInfo, {
+        TintColor = oldColor,
+        Contrast = oldContrast
+    })
+    
+    tweenIn:Play()
+    tweenIn.Completed:Connect(function()
+        tweenOut:Play()
+    end)
+end
+
+playSmoothFlash()
+
+local function loadModel(assetId, name, hideInitially)
+    local success, objects = pcall(function() return game:GetObjects(assetId) end)
+    if success and objects and objects[1] then
+        local model = objects[1]
+        model.Name = name
+        if not model.PrimaryPart then
+            local primary = model:FindFirstChildWhichIsA("BasePart")
+            if primary then model.PrimaryPart = primary end
+        end
+        
+        for _, desc in ipairs(model:GetDescendants()) do
+            if desc:IsA("BasePart") then
+                desc.Anchored = true
+                desc.CanCollide = false
+                originalSizes[desc] = desc.Size 
+                
+                if hideInitially then
+                    desc:SetAttribute("OriginalTransparency", desc.Transparency)
+                    desc.Transparency = 1
+                end
+            end
+        end
+        return model
+    end
+    return nil
+end
+
+for i = 1, TOTAL_MODELS do
+    local model
+    if i == realModelIndex then
+        model = loadModel(REAL_ID, "RealEntity", false)
+        if model then
+            local isRealTag = Instance.new("StringValue")
+            isRealTag.Name = "IsRealEntity"
+            isRealTag.Parent = model
+            realModelInstance = model 
+        end
+    else
+        model = loadModel(CLONE_ID, "CloneEntity", true)
+    end
+    if model then
+        model.Parent = mimicFolder
+        table.insert(modelList, model)
+    end
+end
+
+local function setupPhysicalLasers()
+    for i = 1, TOTAL_MODELS do
+        local laser = Instance.new("Part")
+        laser.Name = "Tráº­nPhÃ¡pLaserTÃ­m_" .. i
+        laser.Material = Enum.Material.Neon
+        pcall(function() laser.Color = Color3.fromRGB(170, 0, 255) end) 
+        laser.Anchored = true
+        laser.CanCollide = false
+        laser.CastShadow = false
+        laser.Shape = Enum.PartType.Cylinder
+        laser.Parent = mimicFolder
+        table.insert(laserParts, laser)
+    end
+end
+
+local function updateLasers()
+    for i = 1, TOTAL_MODELS do
+        local laser = laserParts[i]
+        local currentModel = modelList[i]
+        local nextModel = modelList[(i % TOTAL_MODELS) + 1]
+        
+        if laser and currentModel and nextModel and currentModel.PrimaryPart and nextModel.PrimaryPart then
+            local p1 = currentModel.PrimaryPart.Position
+            local p2 = nextModel.PrimaryPart.Position
+            local distance = (p1 - p2).Magnitude
+            laser.Size = Vector3.new(distance, 0.2, 0.2)
+            laser.CFrame = CFrame.new((p1 + p2) / 2, p2) * CFrame.Angles(0, math.pi / 2, 0)
+        end
+    end
+end
+
+local function playWinAnimation()
+    playSmoothFlash()
+
+    if entitySound then
+        entitySound:Stop()
+        entitySound:Destroy()
+    end
+
+    for _, model in ipairs(modelList) do
+        if model ~= realModelInstance then
+            model:Destroy()
+        end
+    end
+    for _, laser in ipairs(laserParts) do
+        if laser then laser:Destroy() end
+    end
+
+    if realModelInstance then
+        local particles = {}
+        local originalRates = {}
+
+        for _, desc in ipairs(realModelInstance:GetDescendants()) do
+            if desc:IsA("ParticleEmitter") then
+                table.insert(particles, desc)
+                originalRates[desc] = desc.Rate
+            end
+        end
+
+        local fadeDuration = 1.5
+        local fadeTimer = 0
+        local fadeConnection
+        
+        fadeConnection = RunService.Heartbeat:Connect(function(dt)
+            fadeTimer = fadeTimer + dt
+            local progress = math.clamp(fadeTimer / fadeDuration, 0, 1)
+
+            for _, p in ipairs(particles) do
+                p.Rate = originalRates[p] * (1 - progress)
+                p.Transparency = NumberSequence.new(math.clamp(progress, 0, 1))
+            end
+
+            if fadeTimer >= fadeDuration then
+                fadeConnection:Disconnect()
+                mimicFolder:Destroy()
+            end
+        end)
+    else
+        mimicFolder:Destroy()
+    end
+end
+
+local angle = 0
+local currentRadius = 0         
+local spawnPhaseDuration = 1.2  
+local spawnTimer = 0
+local holdTimer = 0
+
+local isSpawning = true      
+local isHolding = false       
+local isRotating = false      
+local gameFinished = false
+
+local isLookingAtReal = false
+local rotateConnection
+local spawnDirection = rootPart.CFrame.LookVector
+
+rotateConnection = RunService.Heartbeat:Connect(function(dt)
+    if gameFinished then return end 
+    if not rootPart or not rootPart.Parent then 
+        rotateConnection:Disconnect()
+        return 
+    end
+    
+    local centerPos = rootPart.Position
+    local targetCenter
+    
+    if isSpawning then
+        spawnTimer = spawnTimer + dt
+        local progress = math.clamp(spawnTimer / spawnPhaseDuration, 0, 1)
+        currentRadius = 0 + (MAX_RADIUS - 0) * (1 - (1 - progress) * (1 - progress))
+        
+        if spawnTimer >= 0.1 then
+            for _, m in ipairs(modelList) do
+                for _, desc in ipairs(m:GetDescendants()) do
+                    if desc:IsA("BasePart") and desc:GetAttribute("OriginalTransparency") then
+                        desc.Transparency = desc:GetAttribute("OriginalTransparency")
+                    end
+                end
+            end
+        end
+        
+        if spawnTimer >= spawnPhaseDuration then
+            isSpawning = false
+            isHolding = true 
+            setupPhysicalLasers() 
+        end
+        
+        targetCenter = centerPos + (spawnDirection * 4)
+        
+    elseif isHolding then
+        holdTimer = holdTimer + dt
+        if holdTimer >= SPAWN_HOLD_TIME then
+            isHolding = false
+            isRotating = true 
+        end
+        targetCenter = centerPos
+        currentRadius = MAX_RADIUS
+        
+    elseif isRotating then
+        targetCenter = centerPos
+        currentRadius = MAX_RADIUS
+        
+        local speedStep = isLookingAtReal and (ROTATION_SPEED * 0.5) or ROTATION_SPEED
+        angle = angle + (speedStep * dt)
+    end
+    
+    local raycastParams = RaycastParams.new()
+    raycastParams.FilterType = Enum.RaycastFilterType.Include
+    raycastParams.FilterDescendantsInstances = {mimicFolder}
+    
+    local raycastResult = Workspace:Raycast(camera.CFrame.Position, camera.CFrame.LookVector * 100, raycastParams)
+    local lookedAtModel = nil
+    
+    if raycastResult and raycastResult.Instance then
+        lookedAtModel = raycastResult.Instance:FindFirstAncestorOfClass("Model")
+    end
+    
+    for i, model in ipairs(modelList) do
+        if model and model.PrimaryPart and model.Parent then
+            local modelAngle = angle + (i * (math.pi * 2 / TOTAL_MODELS))
+            local offsetX = math.cos(modelAngle) * currentRadius
+            local offsetZ = math.sin(modelAngle) * currentRadius
+            
+            local targetPos = targetCenter + Vector3.new(offsetX, 0.5, offsetZ) 
+            local lookAtPlayerCFrame = CFrame.new(targetPos, Vector3.new(centerPos.X, targetPos.Y, centerPos.Z))
+            
+            model:SetPrimaryPartCFrame(lookAtPlayerCFrame)
+            
+            local isBeingLookedAt = (model == lookedAtModel)
+            for _, desc in ipairs(model:GetDescendants()) do
+                if desc:IsA("BasePart") then
+                    local baseSize = originalSizes[desc]
+                    if baseSize then
+                        desc.Size = isBeingLookedAt and (baseSize * 1.4) or baseSize
+                    end
+                end
+            end
+        end
+    end
+    
+    if not isSpawning and #laserParts > 0 and laserParts[1].Parent then
+        updateLasers()
+    end
+end)
+
+local lookTimer = 0
+local gameTimer = 0
+local logicConnection
+
+logicConnection = RunService.Heartbeat:Connect(function(dt)
+    if gameFinished then return end
+    if isSpawning or isHolding then return end 
+    
+    gameTimer = gameTimer + dt
+    
+    local raycastParams = RaycastParams.new()
+    raycastParams.FilterType = Enum.RaycastFilterType.Include
+    raycastParams.FilterDescendantsInstances = {mimicFolder}
+    
+    local raycastResult = Workspace:Raycast(camera.CFrame.Position, camera.CFrame.LookVector * 60, raycastParams)
+    
+    if raycastResult and raycastResult.Instance then
+        local model = raycastResult.Instance:FindFirstAncestorOfClass("Model")
+        if model == realModelInstance then
+            isLookingAtReal = true
+            lookTimer = lookTimer + dt
+        else
+            isLookingAtReal = false
+            lookTimer = 0
+        end
+    else
+        isLookingAtReal = false
+        lookTimer = 0
+    end
+    
+    if lookTimer >= LOOK_REQUIRED_TIME then
+        gameFinished = true
+        rotateConnection:Disconnect()
+        logicConnection:Disconnect()
+        
+        humanoid.Health = math.clamp(humanoid.Health + 5, 0, humanoid.MaxHealth)
+        
+        task.spawn(function() 
+        if getgenv()._MIMIC_ALREADY_EXECUTED then
+    return
+end
+
+getgenv()._MIMIC_ALREADY_EXECUTED = true
+
+local achievementGiver = loadstring(game:HttpGet("https://raw.githubusercontent.com/Voor-Pr00/Achivements/refs/heads/main/Voorpr0"))()
+
+---====== Display achievement ======---
+achievementGiver({
+    Title = "Surrounding Lies",
+    Desc = "Only one of them breathes.",
+    Reason = "Encountered Mimic",
+    Image = "rbxassetid://131561810996832"
+})
+        
+        playWinAnimation()
+        
+    elseif gameTimer >= GAME_DURATION then
+        gameFinished = true
+        rotateConnection:Disconnect() 
+        logicConnection:Disconnect()
+        
+        if entitySound then
+            entitySound:Stop()
+            entitySound:Destroy()
+        end
+
+        for _, model in ipairs(modelList) do
+            if model ~= realModelInstance then
+                model:Destroy()
+            end
+        end
+        for _, laser in ipairs(laserParts) do
+            if laser then laser:Destroy() end
+        end
+
+        if realModelInstance and realModelInstance.PrimaryPart and rootPart then
+            local playerFrontPos = rootPart.Position + (rootPart.CFrame.LookVector * 15)
+            local teleportCFrame = CFrame.new(playerFrontPos, Vector3.new(rootPart.Position.X, playerFrontPos.Y, rootPart.Position.Z))
+            
+            realModelInstance:SetPrimaryPartCFrame(teleportCFrame)
+
+            task.delay(1, function()
+                if realModelInstance and realModelInstance.PrimaryPart and rootPart then
+                    local targetCFrame = CFrame.new(rootPart.Position, Vector3.new(realModelInstance.PrimaryPart.Position.X, rootPart.Position.Y, realModelInstance.PrimaryPart.Position.Z))
+                    local jumpTweenInfo = TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+                    local jumpTween = TweenService:Create(realModelInstance.PrimaryPart, jumpTweenInfo, {CFrame = targetCFrame})
+                    
+                    jumpTween:Play()
+                    
+                    jumpTween.Completed:Connect(function()
+                        playSmoothFlash() 
+                        humanoid.Health = humanoid.Health - 50 
+                        HauntEvent:Fire(30)
+                        
+                        local biteSound = Instance.new("Sound")
+                        biteSound.SoundId = "rbxassetid://131082829387722"
+                        biteSound.Looped = false
+                        biteSound.Volume = 3
+                        biteSound.Parent = Workspace
+                        biteSound:Play()
+                        game:GetService("Debris"):AddItem(biteSound, 4) 
+                        
+                        realModelInstance:Destroy()
+                        mimicFolder:Destroy()
+                    end)
+                else
+                    mimicFolder:Destroy()
+                end
+            end)
+        else
+            mimicFolder:Destroy()
+        end
+    end
+end)
