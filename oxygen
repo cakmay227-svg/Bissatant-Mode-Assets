@@ -1,3 +1,410 @@
+task.spawn(function()
+if getgenv()._SIB_ALREADY_EXECUTED then
+    return
+end
+
+getgenv()._SIB_ALREADY_EXECUTED = true
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local player = Players.LocalPlayer
+local PlayerGui = player:WaitForChild("PlayerGui")
+
+local Lighting = game:GetService("Lighting")
+
+local Blur = Lighting:FindFirstChild("HauntBlur")
+local OriginalWalkSpeed = nil
+
+if not Blur then
+	Blur = Instance.new("BlurEffect")
+	Blur.Name = "HauntBlur"
+	Blur.Size = 0
+	Blur.Parent = Lighting
+end
+
+local SpeedLoopEnabled = false
+
+-- Xóa GUI cũ nếu có
+local old = PlayerGui:FindFirstChild("VerticalProgressBar")
+if old then
+	old:Destroy()
+end
+
+-- =========================
+-- GUI
+-- =========================
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "VerticalProgressBar"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.IgnoreGuiInset = true
+ScreenGui.DisplayOrder = 999999999
+ScreenGui.Parent = PlayerGui
+
+-- Border ngoài
+local BorderFrame = Instance.new("Frame")
+BorderFrame.Name = "Border"
+BorderFrame.Size = UDim2.new(0, 36, 0, 220)
+BorderFrame.Position = UDim2.new(0, 15, 0.5, -110)
+BorderFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+BorderFrame.BorderSizePixel = 0
+BorderFrame.Parent = ScreenGui
+
+local BorderCorner = Instance.new("UICorner")
+BorderCorner.CornerRadius = UDim.new(1, 0)
+BorderCorner.Parent = BorderFrame
+
+-- Glow neon
+local Glow = Instance.new("UIStroke")
+Glow.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+Glow.Color = Color3.fromRGB(180, 0, 255)
+Glow.Thickness = 1.5
+Glow.Parent = BorderFrame
+
+-- Bar chính
+local BarFrame = Instance.new("Frame")
+BarFrame.Name = "Bar"
+BarFrame.Size = UDim2.new(1, -4, 1, -4)
+BarFrame.Position = UDim2.new(0, 2, 0, 2)
+BarFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+BarFrame.BorderSizePixel = 0
+BarFrame.Parent = BorderFrame
+
+local BarCorner = Instance.new("UICorner")
+BarCorner.CornerRadius = UDim.new(1, 0)
+BarCorner.Parent = BarFrame
+
+-- Fill
+local FillFrame = Instance.new("Frame")
+FillFrame.Name = "Fill"
+FillFrame.AnchorPoint = Vector2.new(0, 1)
+FillFrame.Position = UDim2.new(0, 0, 1, 0)
+FillFrame.Size = UDim2.new(1, 0, 0, 0)
+FillFrame.BorderSizePixel = 0
+FillFrame.Parent = BarFrame
+
+local FillCorner = Instance.new("UICorner")
+FillCorner.CornerRadius = UDim.new(1, 0)
+FillCorner.Parent = FillFrame
+
+local Gradient = Instance.new("UIGradient")
+Gradient.Rotation = 90
+Gradient.Color = ColorSequence.new({
+	ColorSequenceKeypoint.new(0, Color3.fromRGB(200, 70, 255)),
+	ColorSequenceKeypoint.new(0.5, Color3.fromRGB(150, 25, 230)),
+	ColorSequenceKeypoint.new(1, Color3.fromRGB(80, 0, 140))
+})
+Gradient.Parent = FillFrame
+
+-- Text %
+local PercentLabel = Instance.new("TextLabel")
+PercentLabel.Name = "Percent"
+PercentLabel.Size = UDim2.new(1, 0, 1, 0)
+PercentLabel.BackgroundTransparency = 1
+PercentLabel.Text = "0%"
+PercentLabel.TextScaled = false
+PercentLabel.TextSize = 14
+PercentLabel.Font = Enum.Font.GothamBold
+PercentLabel.TextColor3 = Color3.new(1, 1, 1)
+PercentLabel.Parent = BarFrame
+
+local TextStroke = Instance.new("UIStroke")
+TextStroke.Color = Color3.new(0, 0, 0)
+TextStroke.Thickness = 1.5
+TextStroke.Parent = PercentLabel
+
+local PercentGradient = Instance.new("UIGradient")
+PercentGradient.Rotation = 90 -- dọc từ trên xuống dưới
+
+PercentGradient.Color = ColorSequence.new({
+	ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)), -- trắng
+	ColorSequenceKeypoint.new(1, Color3.fromRGB(190, 70, 255))   -- tím
+})
+
+PercentGradient.Parent = PercentLabel
+
+-- =========================
+-- FUNCTIONS
+-- =========================
+local Percent = 0
+
+-- BindableEvent cho script khác
+local HauntEvent = ReplicatedStorage:FindFirstChild("HauntMeterEvent")
+
+if not HauntEvent then
+	HauntEvent = Instance.new("BindableEvent")
+	HauntEvent.Name = "HauntMeterEvent"
+	HauntEvent.Parent = ReplicatedStorage
+end
+
+local EndingStarted = false
+
+local function SetPercent(percent)
+	percent = math.clamp(percent, 0, 100)
+
+	FillFrame.Size = UDim2.new(
+		1,
+		0,
+		percent / 100,
+		0
+	)
+
+	PercentLabel.Text = ("%d%%"):format(percent)
+end
+
+local function getHumanoid()
+	local character = player.Character or player.CharacterAdded:Wait()
+	return character:FindFirstChildOfClass("Humanoid")
+end
+
+local function updateEffects()
+print("Percent =", Percent)
+	local humanoid = getHumanoid()
+
+	if Percent >= 50 then
+
+		-- Blur
+		local BlurAmount = 0
+
+if Percent >= 50 then
+	BlurAmount = 12 + ((Percent - 50) / 50) * 28
+end
+
+TweenService:Create(
+	Blur,
+	TweenInfo.new(0.25),
+	{
+		Size = BlurAmount
+	}
+):Play()
+
+		-- Bật loop speed
+		if not SpeedLoopEnabled then
+			SpeedLoopEnabled = true
+
+			task.spawn(function()
+				while SpeedLoopEnabled do
+					local hum = getHumanoid()
+
+					if hum then
+						hum.WalkSpeed = 12
+					end
+
+					task.wait(0.1)
+				end
+			end)
+		end
+
+	else
+
+		-- Tắt blur
+		TweenService:Create(
+			Blur,
+			TweenInfo.new(0.5),
+			{
+				Size = 0
+			}
+		):Play()
+
+		-- Trả tốc độ bình thường
+		if SpeedLoopEnabled then
+			SpeedLoopEnabled = false
+
+			local hum = getHumanoid()
+			if hum then
+				hum.WalkSpeed = 15
+			end
+		end
+
+	end
+end
+
+local basePos = BorderFrame.Position
+
+local function getShakeAmount(percent)
+	if percent < 50 then
+		return 0
+	elseif percent < 75 then
+		return 3 -- thay vì 1.5
+	else
+		return 3 + ((percent - 75) / 25) * 15
+	end
+end
+
+local RunService = game:GetService("RunService")
+
+task.spawn(function()
+	while BorderFrame.Parent do
+		RunService.RenderStepped:Wait()
+
+		local shake = getShakeAmount(Percent)
+
+		if shake > 0 then
+			local offsetX = (math.random() - 0.5) * 2 * shake
+			local offsetY = (math.random() - 0.5) * 2 * shake
+
+			BorderFrame.Position =
+				basePos + UDim2.fromOffset(offsetX, offsetY)
+		else
+			BorderFrame.Position = basePos
+		end
+	end
+end)
+
+local function fadeGui()
+	for _, obj in ipairs(ScreenGui:GetDescendants()) do
+		if obj:IsA("Frame") then
+			TweenService:Create(
+				obj,
+				TweenInfo.new(1),
+				{
+					BackgroundTransparency = 1
+				}
+			):Play()
+
+		elseif obj:IsA("TextLabel") then
+			TweenService:Create(
+				obj,
+				TweenInfo.new(1),
+				{
+					TextTransparency = 1
+				}
+			):Play()
+
+		elseif obj:IsA("UIStroke") then
+			TweenService:Create(
+				obj,
+				TweenInfo.new(1),
+				{
+					Transparency = 1
+				}
+			):Play()
+		end
+	end
+end
+
+local function endingSequence()
+
+	fadeGui()
+
+	task.wait(1.2)
+
+	local Black = Instance.new("Frame")
+	Black.Size = UDim2.fromScale(1, 1)
+	Black.BackgroundColor3 = Color3.new(0, 0, 0)
+	Black.BorderSizePixel = 0
+	Black.ZIndex = 1000000000
+	Black.Parent = ScreenGui
+
+	task.wait(5)
+
+	local Message = Instance.new("TextLabel")
+	Message.AnchorPoint = Vector2.new(0.5, 0.5)
+	Message.Position = UDim2.fromScale(0.5, 0.5)
+	Message.Size = UDim2.new(0.8, 0, 0.15, 0)
+	Message.BackgroundTransparency = 1
+	Message.Text = ""
+	Message.TextScaled = true
+	Message.Font = Enum.Font.GothamBold
+	Message.TextColor3 = Color3.new(1, 1, 1)
+	Message.ZIndex = 1000000001
+	Message.Parent = Black
+
+	local MessageStroke = Instance.new("UIStroke")
+	MessageStroke.Color = Color3.new(0, 0, 0)
+	MessageStroke.Thickness = 2
+	MessageStroke.Parent = Message
+
+	local TextGradient = Instance.new("UIGradient")
+	TextGradient.Rotation = 90
+	TextGradient.Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, Color3.fromRGB(255,255,255)),
+		ColorSequenceKeypoint.new(1, Color3.fromRGB(160,160,160))
+	})
+	TextGradient.Parent = Message
+
+	local finalText = "You have become one of them"
+
+	for i = 1, #finalText do
+		Message.Text = string.sub(finalText, 1, i)
+		task.wait(0.07)
+	end
+
+	task.wait(7)
+
+	player:Kick("They have fully haunted the hotel")
+end
+
+-- API cho executor
+local TweenRunning = false
+
+_G.SetHauntPercent = function(value)
+	value = math.clamp(tonumber(value) or 0, 0, 100)
+
+	if TweenRunning then
+		return
+	end
+
+	TweenRunning = true
+
+	task.spawn(function()
+
+		while math.abs(Percent - value) > 0 do
+
+			if Percent < value then
+				Percent += math.min(3, value - Percent)
+			else
+				Percent -= math.min(3, Percent - value)
+			end
+
+			SetPercent(Percent)
+			updateEffects()
+
+			Glow.Thickness = 1.5 + (Percent / 100) * 4
+
+			task.wait(0.02)
+		end
+
+		if Percent >= 100 and not EndingStarted then
+			EndingStarted = true
+			endingSequence()
+		end
+
+		TweenRunning = false
+	end)
+end
+
+-- API cho script khác
+HauntEvent.Event:Connect(function(delta)
+	_G.SetHauntPercent(Percent + delta)
+end)
+
+-- =========================
+-- PROGRESS
+-- =========================
+SetPercent(Percent)
+
+task.spawn(function()
+
+	while Percent < 100 do
+	task.wait(2)
+
+	Percent += 1
+
+	SetPercent(Percent)
+	updateEffects()
+	Glow.Thickness = 1.5 + (Percent / 100) * 4
+end
+
+if not EndingStarted then
+	EndingStarted = true
+	endingSequence()
+end
+
+end)
+end) 
+
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -24,6 +431,65 @@ if not room then
 end
 
 --------------------------------------------------
+-- ROOM 50 SPECIAL SPAWN
+--------------------------------------------------
+
+local SpecialNodePosition = nil
+
+local function nodeHasOxygen(node)
+	for _, v in ipairs(node:GetChildren()) do
+		if v:IsA("Model") and v.Name == "OxygenTank" then
+			return true
+		end
+	end
+	return false
+end
+
+if room.Name == "50" then
+
+	local FigureNodes = room:FindFirstChild("FigureNodes", true)
+
+	if FigureNodes then
+
+		local validNodes = {}
+		local freeNodes = {}
+
+		for _, node in ipairs(FigureNodes:GetChildren()) do
+			if node:IsA("BasePart") and (
+				node.Name == "1"
+				or node.Name == "CoolNode"
+				or node.Name == "OtherCoolNode"
+			) then
+
+				table.insert(validNodes, node)
+
+				-- node chưa có oxygen
+				if not nodeHasOxygen(node) then
+					table.insert(freeNodes, node)
+				end
+			end
+		end
+
+		-- 💀 ALL NODE FULL = STOP SPAWN
+		if #validNodes > 0 and #freeNodes == 0 then
+			return
+		end
+
+		-- chọn node để spawn
+		local chosenNode
+
+		if #freeNodes > 0 then
+			chosenNode = freeNodes[math.random(1, #freeNodes)]
+		else
+			chosenNode = validNodes[math.random(1, #validNodes)]
+		end
+
+		SpecialNodePosition = chosenNode.Position
+
+	end
+end
+
+--------------------------------------------------
 -- LOAD MODEL
 --------------------------------------------------
 
@@ -34,7 +500,6 @@ if not model then
 	return
 end
 
-model.Parent = workspace
 model:ScaleTo(2)
 
 if not model.PrimaryPart then
@@ -118,12 +583,34 @@ local function getSpawnPosition()
 	return nil
 end
 
-local spawnPos = getSpawnPosition()
+local spawnPos
 
-if not spawnPos then
-	warn("Could not find safe spawn position")
-	model:Destroy()
-	return
+if SpecialNodePosition then
+
+	spawnPos =
+		SpecialNodePosition
+		+ Vector3.new(
+			0,
+			(modelSize.Y / 2) + 1.5,
+			0
+		)
+
+else
+
+	spawnPos = getSpawnPosition()
+
+	if not spawnPos then
+		warn("Could not find safe spawn position")
+		model:Destroy()
+		return
+	end
+
+end
+
+if SelectedNode then
+	model.Parent = SelectedNode
+else
+	model.Parent = workspace
 end
 
 local originalCF = model:GetPivot()
