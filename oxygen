@@ -280,7 +280,7 @@ prompt.Triggered:Connect(function(plr)
 	
 	local oxy = Instance.new("Sound", workspace) 
 	oxy.SoundId = "rbxassetid://115085871255102" 
-	oxy.Volume = 1
+	oxy.Volume = 0.3
 	oxy:Play()
 	
 	oxy.Ended:Connect(function()
