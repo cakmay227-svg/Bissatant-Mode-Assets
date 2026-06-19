@@ -44,7 +44,7 @@ for _, roomModel in pairs(roomsFolder:GetChildren()) do
 		end
 		
 		if v:IsA("BasePart") and v.Material == Enum.Material.Neon then
-			v:Destroy()
+			v.Transparency = 1
 		end
 		
 	end
