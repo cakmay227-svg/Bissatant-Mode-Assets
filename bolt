@@ -1,0 +1,1021 @@
+local TweenService = game:GetService("TweenService")
+local CurrentRooms = workspace:WaitForChild("CurrentRooms") 
+local Lighting = game:GetService("Lighting")
+
+local spawnedObjects = {} -- Quản lý rác phát sinh để dọn sạch khi hết nhạc
+
+-- 🌟 LƯU GIỮ CỐ ĐỊNH GIÁ TRỊ GỐC CỦA GAME (CHỐNG LỖI LÒA MẮT VĨNH VIỄN)
+local ORIGINAL_BRIGHTNESS = Lighting.Brightness
+local ORIGINAL_EXPOSURE = Lighting.ExposureCompensation
+
+local function OnDeath(reason)
+	print("Player died. Reason: " .. reason)
+	local player = game.Players.LocalPlayer
+	game.ReplicatedStorage.GameStats["Player_" .. player.Name]
+    .Total.DeathCause.Value = "Bolt"
+end
+
+
+function GitAud(soundgit, filename)
+	filename = tostring(filename)
+
+	local url = soundgit
+	local FileName = filename
+
+	writefile(FileName .. ".mp3", game:HttpGet(url))
+	return (getcustomasset or getsynasset)(FileName .. ".mp3")
+end
+
+function CustomGitSound(soundlink, filename)
+	local sound = Instance.new("Sound")
+	sound.SoundId = GitAud(soundlink, filename)
+	sound.Parent = workspace
+	sound.Volume = 1
+	sound.PlaybackSpeed = 1
+	sound.Name = "boltya"
+	sound:Play()
+	
+	sound.Ended:Connect(function()
+    boltSystemActive = false
+    
+    	-- 🌟 TỰ THÊM: LOGIC KÍCH HOẠT KHI NHẠC KẾT THÚC & MỌI EVENT DỪNG
+		task.spawn(function()
+			if getgenv()._BOLT_ALREADY_EXECUTED then
+    return
+end
+
+getgenv()._BOLT_ALREADY_EXECUTED = true
+
+local achievementGiver = loadstring(game:HttpGet("https://raw.githubusercontent.com/Voor-Pr00/Achivements/refs/heads/main/Voorpr0"))()
+
+---====== Display achievement ======---
+achievementGiver({
+    Title = "Fulmination",
+    Desc = "You conquered the wrath of the heavens.",
+    Reason = "Encountered Bolt",
+    Image = "rbxassetid://136362619258702"
+})
+		end)
+		-- 🌟 KẾT THÚC ĐOẠN TỰ THÊM
+
+    -- Thêm đoạn này vào:
+    for _, s in ipairs(game:GetService("SoundService"):GetChildren()) do
+        if s:IsA("Sound") and s.Name == "AmbientThunder" then
+            s:Stop()
+            s:Destroy()
+        end
+    end
+
+		-- 🔥 STOP ALL BOLT LOOP (beam + orbit + attack)
+		for _, v in ipairs(workspace:GetDescendants()) do
+			if v:IsA("Model") and v.Name == "Bolt" then
+
+				for _, obj in ipairs(v:GetDescendants()) do
+					if obj:IsA("Beam") then
+						obj.Enabled = false
+					elseif obj:IsA("ParticleEmitter")
+						or obj:IsA("Trail")
+						or obj:IsA("Fire")
+						or obj:IsA("PointLight")
+						or obj:IsA("SpotLight") then
+						obj.Enabled = false
+					end
+				end
+
+				for _, part in ipairs(v:GetDescendants()) do
+					if part:IsA("BasePart") then
+						game:GetService("TweenService"):Create(
+							part,
+							TweenInfo.new(0.5), 
+							{Transparency = 1}
+						):Play()
+					end
+				end
+
+				task.delay(0.6, function()
+					if v then pcall(function() v:Destroy() end) end
+				end)
+			end
+		end
+
+		-- 🧹 XÓA SẠCH HIỆU ỨNG TIA SÉT CÒN SÓT TRÊN WORKSPACE NGAY LẬP TỨC
+		for _, obj in ipairs(spawnedObjects) do
+			if obj and obj.Parent then
+				pcall(function() obj:Destroy() end)
+			end
+		end
+		table.clear(spawnedObjects)
+
+		-- 🧹 ĐƯA ÁNH SÁNG GAME VỀ GỐC NGAY KHI HẾT NHẠC
+		TweenService:Create(Lighting, TweenInfo.new(1), {
+			Brightness = ORIGINAL_BRIGHTNESS,
+			ExposureCompensation = ORIGINAL_EXPOSURE
+		}):Play()
+
+		-- 🧹 DELETE ROOM SPAWNED MODELS
+		local room = CurrentRooms:FindFirstChild(lastHighest and lastHighest.Name or "")
+		if room then
+		processed[room] = nil
+			for _, obj in ipairs(room:GetDescendants()) do
+				if obj:IsA("Model") and (
+					obj.Name == "RoomEntrance" or
+					obj.Name == "RoomExit"
+				) then
+					obj:Destroy()
+				end
+			end
+		end
+	end)
+
+	return sound
+end
+
+local MODEL_ID = 11183439112
+local BOLT_MODEL_ID = 87705889861257
+
+local processed = {}
+local lastHighest = nil
+local boltSystemActive = true
+
+-- lấy room số cao nhất
+local function getHighestRoom()
+	local highestRoom = nil
+	local highestNumber = -math.huge 
+
+	for _, room in ipairs(CurrentRooms:GetChildren()) do 
+		local num = tonumber(room.Name) 
+		if num and num > highestNumber then 
+			highestNumber = num 
+			highestRoom = room 
+		end
+	end
+
+	return highestRoom 
+end
+
+-- ===== HÀM DO DỌN DẸP PHÒNG CŨ =====
+local function cleanOldRoom(highestRoom)
+	if not highestRoom then return end 
+
+	local assets = highestRoom:FindFirstChild("Assets") 
+	if assets then 
+		for _, obj in ipairs(assets:GetDescendants()) do 
+			if obj:IsA("Model") and (obj.Name == "Rafter" or obj.Name == "Chandelier") then 
+				obj:Destroy() 
+			end
+		end
+	end
+
+	local parts = highestRoom:FindFirstChild("Parts") 
+	if parts then 
+		for _, obj in ipairs(parts:GetDescendants()) do 
+			if obj:IsA("Model") and (obj.Name == "DropCeiling" or obj.Name == "Rafter") then 
+				obj:Destroy() 
+			end
+		end
+	end
+
+	for _, obj in ipairs(highestRoom:GetDescendants()) do 
+		if obj:IsA("ParticleEmitter")
+			or obj:IsA("Trail")
+			or obj:IsA("Beam")
+			or obj:IsA("Smoke")
+			or obj:IsA("Fire")
+			or obj:IsA("Sparkles")
+			or obj:IsA("PointLight")
+			or obj:IsA("SpotLight")
+			or obj:IsA("SurfaceLight") then 
+
+			obj:Destroy() 
+
+		elseif obj:IsA("BasePart") and obj.Material == Enum.Material.Neon then 
+			obj.Transparency = 1 
+		end
+	end
+end
+
+-- ===== SPAWN FUNCTION =====
+local function spawnAtDoor(room, door)
+	if not boltSystemActive then return end
+
+	local success, objects = pcall(function()
+		return game:GetObjects("rbxassetid://" .. MODEL_ID) 
+	end)
+
+	if not success or not objects or not objects[1] then return end 
+
+	local obj = objects[1] 
+	obj.Parent = workspace 
+	table.insert(spawnedObjects, obj)
+
+	local model =
+		obj:IsA("Model")
+		and obj
+		or obj:FindFirstChildWhichIsA("Model", true) 
+
+	if not model then return end 
+
+	for _, v in ipairs(model:GetDescendants()) do 
+		if v:IsA("BasePart") then 
+			v.Anchored = true 
+		end
+	end
+
+	local cf = door.CFrame 
+	local finalCF = cf * CFrame.new(0, 0, -1.5) 
+	local startCF = finalCF * CFrame.new(0, -15, 0) 
+
+	local cfValue = Instance.new("CFrameValue") 
+	cfValue.Value = startCF 
+
+	local conn
+	conn = cfValue:GetPropertyChangedSignal("Value"):Connect(function() 
+		if model and model.Parent then 
+			model:PivotTo(cfValue.Value) 
+		else
+			if conn then conn:Disconnect() end 
+		end
+	end)
+
+	model:PivotTo(startCF) 
+	
+	task.wait(0.2) 
+	if not boltSystemActive then if cfValue then cfValue:Destroy() end return end
+
+	local tween = TweenService:Create( 
+		cfValue,
+		TweenInfo.new(1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), 
+		{ Value = finalCF } 
+	)
+
+	tween:Play() 
+end
+
+-- ===== TRIGGER =====
+local function triggerRoom(room)
+	if processed[room] then return end 
+	processed[room] = true 
+
+	boltSystemActive = true 
+
+	cleanOldRoom(room) 
+
+	local entrance = room:FindFirstChild("RoomEntrance", true) 
+	local exit = room:FindFirstChild("RoomExit", true) 
+	
+	local sound = CustomGitSound(
+		"https://github.com/cakmay227-svg/Bissatant-Mode-Assets/raw/refs/heads/main/hide%20or%20get%20struck.mp3?raw=true",
+		"bolttheme"
+	)
+
+	if entrance and exit then 
+		spawnAtDoor(room, entrance) 
+		task.wait(1) 
+		spawnAtDoor(room, exit) 
+	end
+
+	task.delay(1, function() 
+		if not boltSystemActive or not room.Parent then return end 
+
+		local e = room:FindFirstChild("RoomEntrance", true) 
+		local x = room:FindFirstChild("RoomExit", true) 
+		if not e or not x then return end 
+
+		local pos = (e.Position + x.Position) / 2 
+		pos = Vector3.new(pos.X, e.Position.Y, pos.Z) 
+
+		local p = Instance.new("Part") 
+		p.Anchored = true 
+		p.CanCollide = false 
+		p.Transparency = 1 
+		p.Size = Vector3.new(1,1,1) 
+		p.Position = pos 
+		p.Parent = room 
+		table.insert(spawnedObjects, p)
+
+		local light = Instance.new("PointLight") 
+		light.Color = Color3.fromRGB(170,255,255) 
+		light.Brightness = 2 
+		light.Range = 0 
+		light.Parent = p 
+		
+		task.spawn(function() 
+			local Players = game:GetService("Players")
+			local player = Players.LocalPlayer
+			local playerGui = player:WaitForChild("PlayerGui")
+			local message = "You have entered the high voltage zone."
+
+			local ScreenGui = Instance.new("ScreenGui")
+			ScreenGui.Name = "HighVoltageWarning"
+			ScreenGui.ResetOnSpawn = false
+			ScreenGui.Parent = playerGui
+
+			local TextLabel = Instance.new("TextLabel")
+			TextLabel.Parent = ScreenGui
+			TextLabel.AnchorPoint = Vector2.new(0.5, 0)
+			TextLabel.Position = UDim2.new(0.5, 0, 0.03, 0)
+			TextLabel.Size = UDim2.new(0.8, 0, 0, 40)
+			TextLabel.BackgroundTransparency = 1
+			TextLabel.Text = ""
+			TextLabel.TextColor3 = Color3.fromRGB(255,255,255)
+			TextLabel.Font = Enum.Font.Gotham
+			TextLabel.TextSize = 28
+			TextLabel.TextStrokeTransparency = 1
+			TextLabel.TextTransparency = 0
+			TextLabel.TextXAlignment = Enum.TextXAlignment.Center
+
+			local Gradient = Instance.new("UIGradient")
+			Gradient.Parent = TextLabel
+			Gradient.Color = ColorSequence.new({
+				ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 140, 255)),
+				ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 255, 255))
+			})
+
+			for i = 1, #message do
+				if not boltSystemActive then break end
+				TextLabel.Text = message:sub(1, i)
+				task.wait(0.04)
+			end
+
+			task.wait(5)
+
+			for i = #message - 1, 0, -1 do
+				if not boltSystemActive then break end
+				TextLabel.Text = message:sub(1, i)
+				task.wait(0.04)
+			end
+
+			if ScreenGui then ScreenGui:Destroy() end
+		end) 
+
+		local tween = TweenService:Create(light, TweenInfo.new(4), {Range = 20}) 
+		tween:Play() 
+
+		tween.Completed:Connect(function() 
+			task.delay(4, function() 
+				if not boltSystemActive then return end
+				TweenService:Create(light, TweenInfo.new(2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Range = 0} ):Play() 
+			end) 
+		end) 
+
+		task.wait(2) 
+		if not boltSystemActive then return end
+
+		-- ===== BEAM CORE =====
+		local startPart = p 
+
+		local endPart = Instance.new("Part") 
+		endPart.Anchored = true 
+		endPart.CanCollide = false 
+		endPart.Transparency = 1 
+		endPart.Size = Vector3.new(1,1,1) 
+		endPart.Position = startPart.Position 
+		endPart.Parent = workspace 
+		table.insert(spawnedObjects, endPart)
+
+		local attachment0 = Instance.new("Attachment") 
+		attachment0.Parent = startPart 
+
+		local attachment1 = Instance.new("Attachment") 
+		attachment1.Parent = endPart 
+
+		local beam = Instance.new("Beam") 
+		beam.Attachment0 = attachment0 
+		beam.Attachment1 = attachment1 
+		beam.Width0 = 8 
+		beam.Width1 = 8 
+		beam.Color = ColorSequence.new(Color3.fromRGB(0, 170, 255)) 
+		beam.LightEmission = 30 
+		beam.FaceCamera = true 
+		beam.Parent = startPart 
+		table.insert(spawnedObjects, beam)
+
+		-- ===== TWEEN END PART LÊN TRỜI =====
+		local goalPos = startPart.Position + Vector3.new(0, 80, 0) 
+
+		local moveTween = TweenService:Create( 
+			endPart, 
+			TweenInfo.new(3, Enum.EasingStyle.Linear), 
+			{Position = goalPos} 
+		)
+
+		moveTween:Play() 
+
+		moveTween.Completed:Connect(function() 
+			task.wait(0.1) 
+			if not boltSystemActive then return end
+
+			local fadeTweenInfo = TweenInfo.new(4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out) 
+
+			TweenService:Create(beam, fadeTweenInfo, { 
+				Width0 = 0, 
+				Width1 = 0, 
+				LightEmission = 0 
+			}):Play() 
+
+			TweenService:Create(attachment0.Parent, fadeTweenInfo, { 
+				Transparency = 1 
+			}):Play() 
+
+			TweenService:Create(endPart, fadeTweenInfo, { 
+				Transparency = 1 
+			}):Play() 
+
+			task.delay(4, function() 
+				pcall(function()
+					if beam then beam:Destroy() end 
+					if attachment0 then attachment0:Destroy() end 
+					if attachment1 then attachment1:Destroy() end 
+					if endPart then endPart:Destroy() end 
+				end)
+			end)
+
+						-- ===== SPAWN MODEL Ở ĐIỂM CUỐI =====
+			local success, objects = pcall(function() 
+				return game:GetObjects("rbxassetid://" .. BOLT_MODEL_ID) 
+			end)
+
+			if success and objects and objects[1] and boltSystemActive then 
+				local obj = objects[1] 
+				obj.Parent = workspace 
+				obj.Name = "Bolt"
+
+				local model = 
+					obj:IsA("Model") 
+					and obj 
+					or obj:FindFirstChildWhichIsA("Model", true) 
+
+				if model then 
+					-- 🌟 Đưa vòng lặp sấm chớp vào đây để nó chạy bám theo vòng đời của Bolt
+					task.spawn(function()
+						local thunderSounds = {
+							"rbxassetid://131760046336305",
+							"rbxassetid://80382122526396",
+							"rbxassetid://104849455850882"
+						}
+						while model and model.Parent do
+							local randomSoundId = thunderSounds[math.random(1, #thunderSounds)]
+							local thunderSound = Instance.new("Sound")
+							thunderSound.Name = "AmbientThunder"
+							thunderSound.SoundId = randomSoundId
+							thunderSound.Volume = 1.2
+							thunderSound.PlaybackSpeed = math.random(9, 11) / 10 
+							thunderSound.Parent = game:GetService("SoundService")
+							thunderSound:Play()
+
+							thunderSound.Ended:Connect(function()
+								thunderSound:Destroy()
+							end)
+							table.insert(spawnedObjects, thunderSound)
+
+							-- Chớp sáng bầu trời
+							task.spawn(function()
+								if not model or not model.Parent then return end
+								Lighting.Brightness = 6
+								Lighting.ExposureCompensation = 3
+								local tweenDown1 = TweenService:Create(Lighting, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+									Brightness = ORIGINAL_BRIGHTNESS,
+									ExposureCompensation = ORIGINAL_EXPOSURE
+								})
+								tweenDown1:Play()
+								tweenDown1.Completed:Wait()
+
+								task.wait(0.05)
+								if not model or not model.Parent then return end
+								Lighting.Brightness = 5 
+								Lighting.ExposureCompensation = 2.5
+								local tweenDown2 = TweenService:Create(Lighting, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+									Brightness = ORIGINAL_BRIGHTNESS,
+									ExposureCompensation = ORIGINAL_EXPOSURE
+								})
+								tweenDown2:Play()
+							end)
+
+							task.wait(math.random(20, 60) / 10)
+						end
+					end)
+
+					-- 🌟 HỆ THỐNG KIỂM TRA VỊ TRÍ PLAYER TRONG PHÒNG (ĐÃ SỬA LỖI CÚ PHÁP)
+					local targetRoom = room -- Lưu trữ biến phòng để gọi an toàn trong luồng
+					task.spawn(function()
+						local function getFloors(r)
+							local floors = {}
+							for _, v in ipairs(r:GetDescendants()) do
+								if v:IsA("BasePart") and v.Name == "Floor" then
+									table.insert(floors, v)
+								end
+							end
+							return floors
+						end
+
+						local roomFloors = getFloors(targetRoom) -- Dùng dấu -- để chú thích thay vì dấu #
+
+						-- Cập nhật lại vòng lặp kiểm tra vị trí để lấy lại Character mới nhất mỗi chu kỳ:
+while model and model.Parent do
+    local Players = game:GetService("Players")
+    local player = Players.LocalPlayer
+    local character = player.Character -- Lấy character mới nhất tại thời điểm check
+    local hrp = character and character:FindFirstChild("HumanoidRootPart")
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+
+    if hrp and humanoid and humanoid.Health > 0 then
+        local isInside = false
+
+        for _, floor in ipairs(roomFloors) do
+            local pos = hrp.Position
+            local cf = floor.CFrame
+            local size = floor.Size
+            local relative = cf:PointToObjectSpace(pos)
+
+            if math.abs(relative.X) <= size.X/2
+                and math.abs(relative.Z) <= size.Z/2
+                and math.abs(relative.Y) <= 5 then
+                isInside = true
+                break
+            end
+        end
+
+        if not isInside then
+            humanoid.Health = 0
+            OnDeath("OutsideRoom")
+            break
+        end
+    end
+
+    task.wait(1)
+end
+
+					end)
+
+					for _, v in ipairs(model:GetDescendants()) do 
+						if v:IsA("BasePart") then 
+							v.Anchored = true 
+						end 
+					end 
+
+					model:PivotTo(CFrame.new(goalPos))
+					
+					local Players = game:GetService("Players") 
+					local RunService = game:GetService("RunService") 
+
+					local player = Players.LocalPlayer 
+					local camera = workspace.CurrentCamera 
+
+					local function getRandomFloor(r) 
+						local floors = {} 
+
+						for _, v in ipairs(r:GetDescendants()) do 
+							if v:IsA("BasePart") and v.Name == "Floor" then 
+								table.insert(floors, v) 
+							end 
+						end 
+
+						if #floors == 0 then return nil end 
+						return floors[math.random(1, #floors)] 
+					end
+
+					local function getRandomPointOnPart(part) 
+						local size = part.Size 
+						local cfrm = part.CFrame 
+
+						local x = (math.random() - 0.5) * size.X 
+						local z = (math.random() - 0.5) * size.Z 
+
+						return (cfrm * CFrame.new(x, 2, z)).Position 
+					end
+
+					local function cameraShake(strength, duration) 
+						local t = 0 
+						local connShake 
+
+						connShake = RunService.RenderStepped:Connect(function(dt) 
+							t += dt 
+
+							if t >= duration or not boltSystemActive then 
+								connShake:Disconnect() 
+								return 
+							end 
+
+							local alpha = 1 - (t / duration) 
+							local currentStrength = strength * alpha 
+
+							local offset = Vector3.new( 
+								(math.random() - 0.5) * currentStrength, 
+								(math.random() - 0.5) * currentStrength, 
+								(math.random() - 0.5) * currentStrength 
+							) 
+
+							camera.CFrame = camera.CFrame * CFrame.new(offset) 
+						end) 
+					end
+
+					local bolt = model 
+					local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart") 
+
+					if not bolt or not hrp then return end 
+
+					bolt.PrimaryPart = bolt.PrimaryPart or bolt:FindFirstChildWhichIsA("BasePart") 
+
+					local baseY = bolt.PrimaryPart.Position.Y 
+
+					task.spawn(function() 
+						while boltSystemActive and bolt and bolt.Parent do
+
+							local angle = math.random() * math.pi * 2 
+							local radius = math.random(8, 15) 
+
+							local offset = Vector3.new( 
+								math.cos(angle) * radius, 
+								0, 
+								math.sin(angle) * radius 
+							) 
+
+							local targetPos = Vector3.new( 
+								hrp.Position.X + offset.X, 
+								baseY, 
+								hrp.Position.Z + offset.Z 
+							) 
+
+							local goalCF = CFrame.new(targetPos) 
+
+							local tweenOrbit = TweenService:Create( 
+								bolt.PrimaryPart, 
+								TweenInfo.new(0.15, Enum.EasingStyle.Linear), 
+								{CFrame = goalCF} 
+							) 
+
+							tweenOrbit:Play() 
+							tweenOrbit.Completed:Wait() 
+						end 
+					end) 
+
+					-- ===== ATTACK LOOP =====
+					task.spawn(function() 
+						while boltSystemActive and bolt and bolt.Parent do
+
+							task.wait(math.random(1, 4)) 
+							if not boltSystemActive then break end 
+
+							local floor = getRandomFloor(room) 
+							if not floor then continue end 
+
+							local hitPos = getRandomPointOnPart(floor) 
+
+							local a0 = Instance.new("Attachment") 
+							a0.Parent = bolt.PrimaryPart 
+
+							local fakeEnd = Instance.new("Part") 
+							fakeEnd.Anchored = true 
+							fakeEnd.CanCollide = false 
+							fakeEnd.Transparency = 1 
+							fakeEnd.Position = hitPos + Vector3.new(0, 50, 0) 
+							fakeEnd.Parent = workspace 
+							table.insert(spawnedObjects, fakeEnd)
+
+							local a1 = Instance.new("Attachment") 
+							a1.Parent = fakeEnd 
+
+							local attackBeam = Instance.new("Beam") 
+							attackBeam.Attachment0 = a0 
+							attackBeam.Attachment1 = a1 
+							attackBeam.Width0 = 20 
+							attackBeam.Width1 = 20 
+							attackBeam.Color = ColorSequence.new({ 
+								ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 255, 255)), 
+								ColorSequenceKeypoint.new(0.5, Color3.fromRGB(0, 170, 255)), 
+								ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 255, 255)), 
+							}) 
+							attackBeam.Texture = "rbxassetid://7151778304" 
+							attackBeam.TextureLength = 1 
+							attackBeam.TextureSpeed = 2 
+							attackBeam.LightEmission = 4 
+							attackBeam.LightInfluence = 0 
+							attackBeam.Segments = 20 
+							attackBeam.FaceCamera = true 
+							attackBeam.Parent = bolt.PrimaryPart 
+							table.insert(spawnedObjects, attackBeam)
+
+							local tweenBeam = TweenService:Create( 
+								fakeEnd, 
+								TweenInfo.new(0.2, Enum.EasingStyle.Linear), 
+								{Position = hitPos} 
+							) 
+
+							local hitOnce = false 
+							local damageConn 
+
+							damageConn = RunService.Heartbeat:Connect(function() 
+    if hitOnce or not boltSystemActive then if damageConn then damageConn:Disconnect() end return end 
+    if not fakeEnd or not fakeEnd.Parent then return end 
+
+    local origin = a0.WorldPosition 
+    local target = fakeEnd.Position 
+    local dir = target - origin 
+
+    local params = RaycastParams.new() 
+    params.FilterType = Enum.RaycastFilterType.Blacklist 
+    params.FilterDescendantsInstances = {bolt} 
+
+    local result = workspace:Raycast(origin, dir, params) 
+
+    if result and result.Instance then 
+        local char = result.Instance:FindFirstAncestorOfClass("Model") 
+        local hum = char and char:FindFirstChildOfClass("Humanoid") 
+
+        if hum and hum.Health > 0 then -- Kiểm tra kỹ nhân vật còn sống hay không
+            local pPlayer = Players:GetPlayerFromCharacter(char) 
+            if pPlayer == Players.LocalPlayer then 
+                hum:TakeDamage(40) 
+                hitOnce = true 
+                
+                if hum.Health <= 0 then
+			OnDeath("BeamStrike") -- Kích hoạt xử lý chết
+		end
+		
+                if damageConn then damageConn:Disconnect() end 
+            end 
+        end 
+    end 
+end)
+
+							tweenBeam:Play() 
+							tweenBeam.Completed:Wait() 
+							if not boltSystemActive then break end 
+							
+							cameraShake(2.5, 1) 
+
+							-- ================= IMPACT EFFECT (SỬA LỖI TRÀN ÁNH SÁNG) =================
+							local impactPos = hitPos 
+
+							Lighting.Brightness = 5 
+							Lighting.ExposureCompensation = 2 
+
+							-- Sử dụng trực tiếp giá trị HẰNG SỐ GỐC đã lưu ở đầu script thay vì biến động
+							TweenService:Create( 
+								Lighting, 
+								TweenInfo.new(2.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), 
+								{ 
+									Brightness = ORIGINAL_BRIGHTNESS, 
+									ExposureCompensation = ORIGINAL_EXPOSURE 
+								} 
+							):Play() 
+
+							local gui = Instance.new("ScreenGui") 
+							gui.IgnoreGuiInset = true 
+							gui.ResetOnSpawn = false 
+							gui.Parent = player:WaitForChild("PlayerGui") 
+
+							local img = Instance.new("ImageLabel") 
+							img.Size = UDim2.new(1,0,1,0) 
+							img.BackgroundTransparency = 1 
+							img.Image = "rbxassetid://78133552604528" 
+							img.ScaleType = Enum.ScaleType.Stretch 
+							img.ImageTransparency = 0 
+							img.Parent = gui 
+
+							task.delay(0.1, function() 
+								TweenService:Create( 
+									img, 
+									TweenInfo.new(2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), 
+									{ImageTransparency = 1} 
+								):Play() 
+
+								task.wait(2) 
+								if gui then gui:Destroy() end 
+							end)
+
+							local impactPart = Instance.new("Part") 
+							impactPart.Anchored = true 
+							impactPart.CanCollide = false 
+							impactPart.Transparency = 1 
+							impactPart.Size = Vector3.new(1,1,1) 
+							impactPart.Position = impactPos 
+							impactPart.Parent = workspace 
+							table.insert(spawnedObjects, impactPart)
+
+							local lightImpact = Instance.new("PointLight") 
+							lightImpact.Color = Color3.fromRGB(120, 220, 255) 
+							lightImpact.Brightness = 2 
+							lightImpact.Range = 40 
+							lightImpact.Parent = impactPart 
+
+							local sGui = Instance.new("SurfaceGui") 
+							sGui.Face = Enum.NormalId.Top 
+							sGui.AlwaysOnTop = true 
+							sGui.LightInfluence = 0 
+							sGui.Parent = impactPart 
+							
+							-- ===== PHÁT ÂM THANH NỔ KHI ĐÁP ĐẤT =====
+local expoSound = Instance.new("Sound")
+expoSound.SoundId = "rbxassetid://140653132496955" -- Thay ID âm thanh của bạn ở đây
+expoSound.Volume = 1.2
+expoSound.PlaybackSpeed = 1
+expoSound.Parent = impactPart -- Đặt vào part nổ để có âm thanh 3D (to nhỏ theo khoảng cách)
+expoSound:Play()
+
+-- Tự động xóa âm thanh sau khi phát xong để tránh rác game
+expoSound.Ended:Connect(function()
+    expoSound:Destroy()
+end)
+
+
+							task.spawn(function() 
+								local sImg = Instance.new("ImageLabel") 
+								sImg.Size = UDim2.new(1, 0, 1, 0) 
+								sImg.BackgroundTransparency = 1
+								sImg.Image = "rbxassetid://125309851630277" 
+								sImg.Parent = sGui 
+
+								task.wait(2) 
+								if not boltSystemActive then if sImg then sImg:Destroy() end return end
+
+								TweenService:Create( 
+									sImg, 
+									TweenInfo.new(3, Enum.EasingStyle.Linear), 
+									{ImageTransparency = 1} 
+								):Play() 
+
+								task.wait(3) 
+								if sImg then sImg:Destroy() end 
+							end) 
+
+							TweenService:Create( 
+								lightImpact, 
+								TweenInfo.new(3, Enum.EasingStyle.Linear), 
+								{Range = 0} 
+							):Play() 
+
+							local fire = Instance.new("Fire") 
+							fire.Color = Color3.fromRGB(110, 236, 255) 
+							fire.SecondaryColor = Color3.fromRGB(0, 221, 255) 
+							fire.Size = 20 
+							fire.Heat = 10 
+							fire.Parent = impactPart 
+
+							local hitCooldown = {} 
+
+							local touchConn
+							touchConn = impactPart.Touched:Connect(function(hit) 
+								local char = hit.Parent
+								local hum = char and char:FindFirstChildOfClass("Humanoid") 
+								if not hum then return end 
+
+								if hitCooldown[hum] or not boltSystemActive then return end 
+								hitCooldown[hum] = true 
+
+								task.spawn(function() 
+									while hum and hum.Health > 0 and impactPart.Parent and boltSystemActive do 
+										hum:TakeDamage(2) 
+										
+										if hum.Health <= 0 then
+			OnDeath("FireDamage") -- Kích hoạt xử lý chết
+			break
+		end
+										task.wait(0.7) 
+									end 
+									hitCooldown[hum] = nil 
+								end) 
+							end)
+
+							task.delay(7, function() 
+								pcall(function()
+									if touchConn then touchConn:Disconnect() end
+									if fire then fire:Destroy() end 
+									if impactPart then impactPart:Destroy() end 
+								end)
+							end)
+
+							local fadeTweenAttack = TweenInfo.new(4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out) 
+
+							TweenService:Create(attackBeam, fadeTweenAttack, { 
+    Width0 = 0, 
+    Width1 = 0, 
+    LightEmission = 0 
+}):Play() 
+
+TweenService:Create(fakeEnd, fadeTweenAttack, { 
+    Transparency = 1 
+}):Play() 
+
+-- 🌟 Bọc kiểm tra an toàn cho a0.Parent để chống lỗi instance is null
+if a0 and a0.Parent then
+    TweenService:Create(a0.Parent, fadeTweenAttack, { 
+        Transparency = 1 
+    }):Play() 
+end
+
+
+							task.delay(4, function() 
+								pcall(function()
+									if attackBeam then attackBeam:Destroy() end 
+									if a0 then a0:Destroy() end 
+									if fakeEnd then fakeEnd:Destroy() end 
+								end)
+							end)
+						end 
+					end) 
+				end 
+			end 
+
+			pcall(function()
+				if beam then beam:Destroy() end 
+				if startPart then startPart:Destroy() end 
+				if endPart then endPart:Destroy() end 
+			end)
+		end) 
+	end) 
+end
+
+-- ===== WATCH SYSTEM (CHỈ CHẠY ĐÚNG 1 LẦN DUY NHẤT TRONG GAME) =====
+local hasTriggered = false 
+
+task.spawn(function()
+	while true do
+		if hasTriggered then 
+			break 
+		end
+
+		local currentHighest = getHighestRoom()
+
+		if not currentHighest then
+			task.wait(0.5)
+			continue
+		end
+
+		if not lastHighest then
+			lastHighest = currentHighest
+			task.wait(0.5)
+			continue
+		end
+
+		if currentHighest ~= lastHighest then
+			local old = lastHighest
+			lastHighest = currentHighest
+
+			local Players = game:GetService("Players")
+			local player = Players.LocalPlayer
+
+			local enteredRoom = false
+			local TIME_LIMIT = 10
+			local startTime = tick()
+
+			local function getFloors(room)
+				local floors = {}
+				for _, v in ipairs(room:GetDescendants()) do
+					if v:IsA("BasePart") and v.Name == "Floor" then
+						table.insert(floors, v)
+					end
+				end
+				return floors
+			end
+
+			local function isOnFloor(hrp, floors)
+				for _, floor in ipairs(floors) do
+					local pos = hrp.Position
+					local cf = floor.CFrame
+					local size = floor.Size
+					local relative = cf:PointToObjectSpace(pos)
+
+					if math.abs(relative.X) <= size.X/2
+					and math.abs(relative.Z) <= size.Z/2
+					and math.abs(relative.Y) <= 5 then
+						return true
+					end
+				end
+				return false
+			end
+
+			local floors = getFloors(old)
+
+			task.spawn(function()
+				while true do
+					if enteredRoom or hasTriggered then break end
+
+					local character = player.Character
+					local hrp = character and character:FindFirstChild("HumanoidRootPart")
+					local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+
+					if hrp and humanoid then
+						local onFloor = isOnFloor(hrp, floors)
+
+						if onFloor then
+							enteredRoom = true
+							hasTriggered = true 
+							triggerRoom(old)
+							break
+						end
+
+						if tick() - startTime >= TIME_LIMIT then
+							humanoid.Health = 0
+							break
+						end
+					end
+
+					task.wait(0.1)
+				end
+			end)
+		end
+
+		task.wait(0.5)
+	end
+end)
