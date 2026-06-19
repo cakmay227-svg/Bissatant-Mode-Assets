@@ -9,7 +9,6 @@ local character = player.Character or player.CharacterAdded:Wait()
 local rootPart = character:WaitForChild("HumanoidRootPart")
 local humanoid = character:WaitForChild("Humanoid")
 local camera = Workspace.CurrentCamera
-local HauntEvent = ReplicatedStorage:WaitForChild("HauntMeterEvent")
 
 local TOTAL_MODELS = 10         
 local MAX_RADIUS = 15           
@@ -358,8 +357,9 @@ achievementGiver({
     Title = "Surrounding Lies",
     Desc = "Only one of them breathes.",
     Reason = "Encountered Mimic",
-    Image = "rbxassetid://131561810996832"
+    Image = "rbxassetid://99345981721460"
 })
+end) 
         
         playWinAnimation()
         
@@ -372,6 +372,24 @@ achievementGiver({
             entitySound:Stop()
             entitySound:Destroy()
         end
+        
+        task.spawn(function() 
+        if getgenv()._MIMIC_ALREADY_EXECUTED then
+    return
+end
+
+getgenv()._MIMIC_ALREADY_EXECUTED = true
+
+local achievementGiver = loadstring(game:HttpGet("https://raw.githubusercontent.com/Voor-Pr00/Achivements/refs/heads/main/Voorpr0"))()
+
+---====== Display achievement ======---
+achievementGiver({
+    Title = "Surrounding Lies",
+    Desc = "Only one of them breathes.",
+    Reason = "Encountered Mimic",
+    Image = "rbxassetid://99345981721460"
+})
+end) 
 
         for _, model in ipairs(modelList) do
             if model ~= realModelInstance then
@@ -399,7 +417,7 @@ achievementGiver({
                     jumpTween.Completed:Connect(function()
                         playSmoothFlash() 
                         humanoid.Health = humanoid.Health - 50 
-                        HauntEvent:Fire(30)
+                        
                         
                         local biteSound = Instance.new("Sound")
                         biteSound.SoundId = "rbxassetid://131082829387722"
@@ -411,6 +429,11 @@ achievementGiver({
                         
                         realModelInstance:Destroy()
                         mimicFolder:Destroy()
+                        
+                        if game.Players.LocalPlayer.Character.Humanoid.Health <= 0 then
+                        game.ReplicatedStorage.GameStats["Player_" .. player.Name]
+    .Total.DeathCause.Value = "Mimic"
+    end
                     end)
                 else
                     mimicFolder:Destroy()
