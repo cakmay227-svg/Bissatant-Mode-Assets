@@ -1,0 +1,299 @@
+-- Configuration: Custom Asset IDs (Đảm bảo ID asset tồn tại hoặc thay thế bằng ID đúng)
+local SEEK_REPLACEMENT_ID = "rbxassetid://17099860940"
+local FIGURE_REPLACEMENT_ID = "rbxassetid://79146410205578"
+
+local cachedSeekModels = {}
+local cachedEyes = {}
+local cachedSounds = {}
+
+local function safeRemove(list, obj)
+    for i = #list, 1, -1 do
+        if list[i] == obj then
+            table.remove(list, i)
+            return
+        end
+    end
+end
+
+workspace.DescendantAdded:Connect(function(obj)
+    if obj:IsA("Model") then
+        if obj.Name == "Seek_Arm" then
+            table.insert(cachedSeekModels, obj)
+        elseif obj.Name == "Eye" then
+            table.insert(cachedEyes, obj)
+        end
+    end
+
+    if obj:IsA("Sound") and obj.Name == "SeekMusic" then
+        table.insert(cachedSounds, obj)
+    end
+end)
+
+local function getAsset(id)
+    local success, objects = pcall(function() 
+        return game:GetObjects(id) 
+    end)
+    return success and objects and objects[1] or nil
+end
+
+local customSeekSource = getAsset(SEEK_REPLACEMENT_ID)
+local customFigureSource = getAsset(FIGURE_REPLACEMENT_ID)
+
+-- Core morphing function with continuous render tracking
+local function morphRig(realRig, customSource, isFigure)
+    if not realRig or realRig:FindFirstChild("Morphed") then return end
+
+    local tag = Instance.new("BoolValue")
+    tag.Name = "Morphed"
+    tag.Parent = realRig
+
+    local realRoot = realRig:FindFirstChild("Root") or realRig:FindFirstChild("HumanoidRootPart")
+    if not realRoot then return end
+
+    local customGroup = Instance.new("Model")
+    customGroup.Name = "CustomMorphGroup"
+    customGroup.Parent = realRig
+
+    local trackingPairs = {}
+
+    local function processCustomPart(partClone, targetLimb, mirrorMode)
+        partClone.CanCollide = false
+        partClone.CanTouch = false
+        partClone.CanQuery = false
+        partClone.Massless = true
+        partClone.Parent = customGroup
+
+        if partClone.Name == "Root" or partClone.Name == "HumanoidRootPart" then
+            partClone.Transparency = 1
+            partClone.Size = Vector3.new(0, 0, 0)
+            if partClone:IsA("MeshPart") then
+                partClone.MeshId = ""
+            end
+        end
+
+        if mirrorMode then
+            partClone.CFrame = targetLimb.CFrame * CFrame.new(1.1, 0, 0) * CFrame.Angles(0, 3.14159, 0)
+        else
+            partClone.CFrame = targetLimb.CFrame
+        end
+
+        local weld = Instance.new("WeldConstraint")
+        weld.Part0 = targetLimb
+        weld.Part1 = partClone
+        weld.Parent = partClone
+
+        table.insert(trackingPairs, {Custom = partClone, Real = targetLimb, Mirror = mirrorMode})
+    end
+
+    if customSource then
+        for _, child in ipairs(customSource:GetDescendants()) do
+            if child:IsA("BasePart") or child:IsA("MeshPart") then
+                local newPart = child:Clone()
+                local matchingRealPart = realRig:FindFirstChild(newPart.Name)
+
+                if not matchingRealPart then
+                    if newPart.Name == "hand" then
+                        matchingRealPart = realRig:FindFirstChild("RightHand") or realRig:FindFirstChild("LeftHand")
+                    elseif newPart.Name:lower():find("foot") then
+                        matchingRealPart = realRig:FindFirstChild("RightFoot") or realRig:FindFirstChild("LeftFoot")
+                    end
+                end
+
+                local targetPart = matchingRealPart or realRoot
+                processCustomPart(newPart, targetPart, false)
+
+                if not isFigure then
+                    if newPart.Name == "UpperRightLeg" then
+                        local leftUpper = child:Clone()
+                        leftUpper.Name = "LeftUpperLeg"
+                        processCustomPart(leftUpper, realRig:FindFirstChild("LeftUpperLeg") or targetPart, true)
+                    elseif newPart.Name == "LowerRightLeg" then
+                        local leftLower = child:Clone()
+                        leftLower.Name = "LowerRightLeg"
+                        processCustomPart(leftLower, realRig:FindFirstChild("LowerRightLeg") or targetPart, true)
+                    elseif newPart.Name == "RightFoot" then
+                        local leftFoot = child:Clone()
+                        leftFoot.Name = "LeftFoot"
+                        processCustomPart(leftFoot, realRig:FindFirstChild("LeftFoot") or targetPart, true)
+                    end
+                end
+            elseif child:IsA("Decal") or child:IsA("Texture") then
+                child:Clone().Parent = realRoot
+            end
+        end
+    end
+
+    local cycleCount = 0
+    task.spawn(function()
+        while realRig and realRig:IsDescendantOf(workspace) do
+            cycleCount = cycleCount + 1
+
+            for _, item in ipairs(realRig:GetChildren()) do
+                if (item:IsA("BasePart") or item:IsA("MeshPart")) and item.Name ~= "Root" and item.Name ~= "HumanoidRootPart" and item ~= customGroup then
+                    item.Transparency = 1
+                end
+            end
+
+            for _, item in ipairs(realRig:GetDescendants()) do
+                if (item:IsA("Decal") or item:IsA("Texture")) and item.Name ~= "Eye" and not item:IsDescendantOf(customGroup) then
+                    item.Enabled = false
+                end
+                if item:IsA("ParticleEmitter") or item:IsA("Trail") or item:IsA("Beam") or item:IsA("Light") or item:IsA("Fire") or item:IsA("Smoke") or item:IsA("Sparkles") or item:IsA("Highlight") then
+                    item.Enabled = false
+                end
+            end
+
+            for _, pair in ipairs(trackingPairs) do
+                if pair.Custom and pair.Real then
+                    if pair.Mirror then
+                        local swingOffset = math.sin(cycleCount * 0.25) * 0.6
+                        local heightOffset = math.cos(cycleCount * 0.25) * 0.3
+                        pair.Custom.CFrame = pair.Real.CFrame * CFrame.new(1.1, heightOffset, -swingOffset) * CFrame.Angles(swingOffset, math.rad(180), 0)
+                    else
+                        pair.Custom.CFrame = pair.Real.CFrame
+                    end
+
+                    if pair.Custom.Transparency ~= 0 and pair.Custom.Name:lower():find("eye") then
+                        pair.Custom.Transparency = 0
+                    end
+                end
+            end
+            task.wait()
+        end
+    end)
+end
+
+local function checkDescendant(descendant)
+    if not descendant:IsA("Model") then return end
+
+    if descendant.Name == "SeekMovingNewClone" then
+        task.spawn(function()
+            local rig = descendant:WaitForChild("SeekRig", 5)
+            local sourceRig = (customSeekSource and customSeekSource:FindFirstChild("SeekRig")) or customSeekSource
+            if rig and sourceRig then 
+                morphRig(rig, sourceRig, false) 
+            end
+        end)
+    end
+
+    if descendant.Name == "SeekRig" then
+        local sourceRig = (customSeekSource and customSeekSource:FindFirstChild("SeekRig")) or customSeekSource
+        if sourceRig then
+            morphRig(descendant, sourceRig, false)
+        end
+    end
+end
+
+for _, descendant in ipairs(game:GetDescendants()) do
+    task.spawn(checkDescendant, descendant)
+end
+
+game.DescendantAdded:Connect(function(descendant)
+    checkDescendant(descendant)
+end)
+
+------------------------------------------------
+-- ROOM 50 FREEZE & SOUND TWEAKS
+------------------------------------------------
+local function applyRoom50Ice(model)
+    for _, v in ipairs(model:GetDescendants()) do
+        if v:IsA("BasePart") and v.Material == Enum.Material.Neon then
+            v:Destroy() 
+        end
+        if v:IsA("Light") then
+            v:Destroy()
+        end
+    end
+end
+
+task.spawn(function()
+    while task.wait(0.5) do
+        local rooms = workspace:FindFirstChild("CurrentRooms")
+        if rooms then
+            local room50 = rooms:FindFirstChild("50")
+            if room50 then
+                applyRoom50Ice(room50)
+            end
+        end
+    end
+end)
+
+------------------------------------------------
+-- FILE SYSTEM CACHE SOUNDS (GITHUB)
+------------------------------------------------
+local function cacheGitSound(GithubSoundPath: string, AssetName: string?): string
+    local Url = GithubSoundPath
+    local safeName = AssetName or tostring(Url):gsub("[^%w]", "_")
+    local fileName = safeName .. ".mp3"
+
+    if not isfile(fileName) then
+        writefile(fileName, game:HttpGet(Url))
+    end
+
+    return getcustomasset(fileName, true)
+end
+
+-- Tải âm thanh từ các liên kết GitHub của bạn
+local customLibraryId = cacheGitSound(
+    "https://github.com/cakmay227-svg/Bissatant-Mode-Assets/raw/refs/heads/main/YTDown_YouTube_Tangle_Media_H5W3Js6mXs0_001_1080p.mp3?raw=true", 
+    "FigureAmbience"
+)
+
+local customSeekId = cacheGitSound(
+    "https://github.com/cakmay227-svg/Bissatant-Mode-Assets/raw/refs/heads/main/seekmovingsofire.mp3?raw=true", 
+    "SeekMoving"
+)
+
+local FIGURE_VOLUME = 1
+
+------------------------------------------------
+-- AUTOMATION LOGIC
+------------------------------------------------
+task.spawn(function()
+    while task.wait(0.3) do
+        local currentRooms = workspace:FindFirstChild("CurrentRooms")
+        if currentRooms then
+            -- ROOM 50 SOUND CONTROL
+            local room50 = currentRooms:FindFirstChild("50")
+            if room50 then
+                local figureSetup50 = room50:FindFirstChild("FigureSetup")
+                if figureSetup50 then
+                    local originalAmbience = figureSetup50:FindFirstChild("Ambience")
+
+                    if originalAmbience and originalAmbience:IsA("Sound") then
+                        if originalAmbience.Volume ~= FIGURE_VOLUME then
+                            originalAmbience.Volume = FIGURE_VOLUME
+                        end
+
+                        if originalAmbience.SoundId ~= customLibraryId then
+                            originalAmbience.SoundId = customLibraryId
+
+                            if originalAmbience.IsPlaying then
+                                originalAmbience:Stop()
+                                originalAmbience:Play()
+                            end
+                        end
+                    end
+                end
+            end
+
+            -- GLOBAL SEEK MUSIC
+            for i = #cachedSounds, 1, -1 do
+                local sound = cachedSounds[i]
+
+                if not sound or not sound.Parent then
+                    table.remove(cachedSounds, i)
+                else
+                    if sound.Name == "SeekMusic" and sound.SoundId ~= customSeekId then
+                        sound.SoundId = customSeekId
+
+                        if sound.IsPlaying then
+                            sound:Stop()
+                            sound:Play()
+                        end
+                    end
+                end
+            end
+        end
+    end
+end)
