@@ -1,0 +1,207 @@
+local CurrentRooms = workspace:WaitForChild("CurrentRooms")
+local burnedParts = {}
+
+local function GetRandomPart(obj)
+	if obj:IsA("BasePart") then
+		return obj
+	elseif obj:IsA("Model") then
+		if obj.PrimaryPart then
+			return obj.PrimaryPart
+		else
+			return obj:FindFirstChildWhichIsA("BasePart", true)
+		end
+	end
+end
+
+local function CanRotate(obj)
+	if obj:IsA("Model") then
+		local name = obj.Name
+
+		if name == "Door"
+		or name == "KeyObtain"
+		or name == "DropCeiling" then
+			return false
+		end
+	end
+
+	return true
+end
+
+local function GetHeat(part)
+	local size = part.Size.Magnitude
+	return math.clamp(math.floor(size / 3), 5, 10)
+end
+
+local function RemoveHalfLights(room)
+	local lights = {}
+
+	for _, v in ipairs(room:GetDescendants()) do
+		if v:IsA("PointLight")
+			or v:IsA("SpotLight")
+			or v:IsA("SurfaceLight") then
+			table.insert(lights, v)
+		end
+	end
+
+	local amount = math.floor(#lights / 2)
+
+	for i = 1, amount do
+		local index = math.random(#lights)
+		local light = table.remove(lights, index)
+
+		if light then
+			light:Destroy()
+		end
+	end
+end
+
+local function CanBeBurned(part)
+	if not part then
+		return false
+	end
+
+	if part.Name == "Floor" then
+		return false
+	end
+
+	if part.Name == "Wall" then
+		return false
+	end
+
+	if part:IsA("MeshPart") and part.Name == "Door" then
+		return false
+	end
+
+	return true
+end
+
+local function AddFire(room)
+	if room.Name == "50" then
+		return
+	end
+
+	local objects = {}
+
+	for _, v in ipairs(room:GetDescendants()) do
+		if v:IsA("BasePart") or v:IsA("Model") then
+			local p = GetRandomPart(v)
+
+			if p
+				and CanBeBurned(p)
+				and not table.find(objects, v) then
+				table.insert(objects, v)
+			end
+		end
+	end
+
+	if #objects == 0 then
+		return
+	end
+
+	local amount = math.clamp(
+		math.floor(#objects / 8),
+		3,
+		math.floor(#objects / 2)
+	)
+
+	for i = 1, math.min(amount, #objects) do
+		local index = math.random(#objects)
+		local obj = table.remove(objects, index)
+		local part = GetRandomPart(obj)
+
+		if part and not part:FindFirstChild("RandomFire") then
+			if CanRotate(obj) then
+	if obj:IsA("Model") then
+		for _, v in ipairs(obj:GetDescendants()) do
+			if v:IsA("BasePart") then
+				v.Anchored = false
+			end
+		end
+	elseif part:IsA("BasePart") then
+		part.Anchored = false
+	end
+end
+
+local blackAmount = math.max(1, math.floor(#burnedParts / 2))
+
+for i = 1, math.min(blackAmount, #burnedParts) do
+	local index = math.random(#burnedParts)
+	local part = table.remove(burnedParts, index)
+
+	if part and part.Parent then
+		part.Color = Color3.fromRGB(15, 15, 15)
+		part.Material = Enum.Material.Asphalt
+
+		local smoke = Instance.new("Smoke")
+		smoke.Color = Color3.fromRGB(40, 40, 40)
+		smoke.Opacity = 0.15 -- khá mờ
+		smoke.Size = math.clamp(part.Size.Magnitude / 3, 2, 6)
+		smoke.RiseVelocity = 1.5
+		smoke.Parent = part
+	end
+end
+
+			local fire = Instance.new("Fire")
+			fire.Name = "RandomFire"
+			fire.Heat = GetHeat(part)
+			fire.Size = math.clamp(part.Size.Magnitude / 3, 4, 10)
+			fire.Parent = part
+			
+			table.insert(burnedParts, part)
+
+			local light = Instance.new("PointLight")
+			light.Brightness = 0.4
+			light.Range = 8
+			light.Color = Color3.fromRGB(255, 140, 40)
+			light.Parent = part
+
+			local sound = Instance.new("Sound")
+			sound.Name = "FireSound"
+			sound.SoundId = "rbxassetid://112352139435056"
+			sound.Looped = true
+			sound.Volume = 0.4
+			sound.Parent = part
+			sound:Play()
+
+			local tilt = math.rad(math.random(10, 35))
+			if math.random(1, 2) == 1 then
+				tilt = -tilt
+			end
+
+		if CanRotate(obj) then
+	if obj:IsA("Model") then
+		obj:PivotTo(
+			obj:GetPivot()
+				* CFrame.Angles(0, 0, tilt)
+		)
+	elseif part:IsA("BasePart") then
+		part.CFrame *= CFrame.Angles(0, 0, tilt)
+	end
+end
+		end
+	end
+end
+
+for _, room in ipairs(CurrentRooms:GetChildren()) do
+	if room:IsA("Model") and room.Name ~= "50" then
+		task.spawn(function()
+			RemoveHalfLights(room)
+
+			if math.random(1, 100) <= 40 then
+				AddFire(room)
+			end
+		end)
+	end
+end
+
+CurrentRooms.ChildAdded:Connect(function(room)
+	if room:IsA("Model") and room.Name ~= "50" then
+		task.wait(0.1)
+
+		RemoveHalfLights(room)
+
+		if math.random(1, 100) <= 40 then
+			AddFire(room)
+		end
+	end
+end)
